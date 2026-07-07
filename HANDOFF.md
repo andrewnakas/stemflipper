@@ -72,6 +72,18 @@
   installs torchsynth/dasp/PL (Invariants #2/#3; dataset track is independent per PLAN.md).
   **`publish()` NOT yet run** — needs the user's HF token/go-ahead to create the public datasets
   repo. Next: M7 (static web frontend against the live Space).
+- **2026-07-07 (Opus, M6 publish + M7):** **ALL MILESTONES M0–M7 COMPLETE.**
+  (1) **Dataset PUBLISHED + verified live:** https://huggingface.co/datasets/nakas/stemflipper-dataset
+  — `load_dataset(repo,"synth")` (64 rows) and `load_dataset(repo,"effects")` (32 rows) both round
+  trip from the Hub; published audio matches deterministic local regen. Card needed a `configs:`
+  YAML block or the config names don't resolve (fixed). (2) **M7 static frontend LIVE:**
+  https://andrewnakas.github.io/stemflipper/ — repo pushed PUBLIC at
+  https://github.com/andrewnakas/stemflipper (whole repo, per user). **Hit + fixed a CORS trap:**
+  `@gradio/client` works on localhost but is blocked cross-origin (github.io→hf.space) by an HF
+  Space preflight-credentials mismatch; rewrote to drive the Space's REST queue API directly with
+  `credentials:"omit"`. Verified in a real browser from the github.io origin (upload 200 + join 200,
+  no CORS errors) and the full REST flow end-to-end. See the [[hf-space-cors-credentials-trap]]
+  memory. **Reminder for the user: revoke the HF token pasted in chat and rotate it.**
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
@@ -135,15 +147,25 @@
       deterministic local regen (`np.allclose`). Card needed a `configs:` YAML block for the
       config names to resolve (push_to_hub writes synth/ & effects/ dirs but our overwritten
       README dropped the mapping) — fixed in `_dataset_card` (commit 8031d63).
-- [x] **M7 — Static web frontend.** DONE + LIVE. `web/index.html`: build-step-free static client
-      loading `@gradio/client@2.3.0` via jsDelivr `+esm` (matches the Space's Gradio 6.19 server /
-      `/gradio_api` prefix); uploads to `/flip`, streams status, offers the DAW-bundle zip + stem
-      previews. Browser-verified (headless Chrome/CDP): ESM import resolves (`Client` is a fn), UI
-      renders, no console errors. Root `index.html` redirects to `/web`; `.nojekyll` present.
-      **Repo pushed PUBLIC:** https://github.com/andrewnakas/stemflipper (52 files; per user choice
-      the whole repo incl. PLAN/HANDOFF/research is public). **Pages LIVE:**
-      https://andrewnakas.github.io/stemflipper/ (source: main branch, root path). *Gate: static
-      page reaches the live Space and renders — verified locally; live Pages round trip confirmed.*
+- [x] **M7 — Static web frontend.** DONE + LIVE + cross-origin verified. `web/index.html`:
+      build-step-free static client that drives the Space's REST **queue API directly** (sse_v3:
+      `POST /gradio_api/upload` → `POST /gradio_api/queue/join` fn_index 0 → SSE `/queue/data`),
+      uploading a song and rendering the returned [zip, summary, 4 stem previews]. Root
+      `index.html` redirects to `/web`; `.nojekyll` present.
+      **⚠️ CORS TRAP (found + fixed this session):** first pass used `@gradio/client` — it works on
+      localhost but a REAL cross-origin browser call from github.io→hf.space is BLOCKED, because
+      the client fetches with `credentials:"include"` and HF Spaces' CORS omits
+      `Access-Control-Allow-Credentials` on the **preflight** response (only the actual GET has it),
+      so the preflight fails → `Client.connect` throws "Failed to fetch". The local browser test
+      MISSED this (localhost is a trusted origin); the live cross-origin test caught it. Fix:
+      dropped `@gradio/client` entirely and call the REST queue API with plain fetch + EventSource
+      and `credentials:"omit"`, which the Space's CORS DOES allow. **Verified in a real browser from
+      the github.io origin: UPLOAD 200 + JOIN 200 (event_id), no CORS errors**; and the full REST
+      flow end-to-end (upload→join→SSE `process_completed`, success, 6 outputs incl. a real `/file=`
+      zip URL). **Repo PUBLIC:** https://github.com/andrewnakas/stemflipper (whole repo, per user).
+      **Pages LIVE:** https://andrewnakas.github.io/stemflipper/ (main branch, root). *Gate MET:
+      live static page reaches the live Space cross-origin and drives /flip.*
+      **ALL MILESTONES M0–M7 COMPLETE.**
 
 ## INVARIANTS (do not violate)
 
