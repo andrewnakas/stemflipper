@@ -108,13 +108,18 @@
   </div>
 
   <script type="module">
-    // @gradio/client 2.x matches the Space's Gradio 6.x server (uses the /gradio_api
-    // prefix). jsDelivr's +esm endpoint bundles the browser build with deps resolved,
-    // so it loads directly in a static <script type=module> with no build step.
-    import { Client } from "https://cdn.jsdelivr.net/npm/@gradio/client@2.3.0/+esm";
+    // NO @gradio/client: its fetches use credentials:"include", and HF Spaces' CORS
+    // layer omits Access-Control-Allow-Credentials on the *preflight* response, so a
+    // cross-origin call from github.io is blocked. We talk to the Space's REST queue
+    // API directly with plain fetch + SSE and credentials:"omit", which the Space's
+    // CORS headers DO permit (verified against /upload, /queue/join, /queue/data).
+    // Protocol: sse_v3 (Gradio 6.x). fn_index 0 = the "flip" endpoint.
 
     // The live StemFlipper Space. Override with ?space=user/name for testing.
     const SPACE = new URLSearchParams(location.search).get("space") || "nakas/stemflipper";
+    const HOST = "https://" + SPACE.replace("/", "-") + ".hf.space";
+    const API = HOST + "/gradio_api";
+    const FN_INDEX = 0;
     document.getElementById("spaceLink").href = "https://huggingface.co/spaces/" + SPACE;
 
     const els = {
@@ -158,10 +163,85 @@
     // A Gradio FileData reference → an absolute, downloadable URL on the Space.
     function fileUrl(fd) {
       if (!fd) return null;
+      if (typeof fd === "string") return fd;
       if (fd.url) return fd.url;
-      // Fallback for a bare {path}: Gradio 6.x serves files under /gradio_api/file=.
-      if (fd.path) return `https://${SPACE.replace("/", "-")}.hf.space/gradio_api/file=${fd.path}`;
+      // A bare {path}: Gradio 6.x serves files under /gradio_api/file=.
+      if (fd.path) return `${API}/file=${fd.path}`;
       return null;
+    }
+
+    // A browser-only session hash the queue uses to correlate join↔results.
+    function sessionHash() {
+      return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    }
+
+    // Upload the chosen file → the Space's server-side temp path (FileData ref).
+    async function uploadFile(file) {
+      const fd = new FormData();
+      fd.append("files", file, file.name);
+      const res = await fetch(`${API}/upload`, { method: "POST", credentials: "omit", body: fd });
+      if (!res.ok) throw new Error("upload failed (" + res.status + ")");
+      const paths = await res.json();          // -> [server_path]
+      return {
+        path: paths[0],
+        orig_name: file.name,
+        meta: { _type: "gradio.FileData" },
+      };
+    }
+
+    // Run /flip via the sse_v3 queue protocol; resolve with the output `data` array.
+    async function runFlip(fileRef, model, onStatus) {
+      const session_hash = sessionHash();
+
+      // Open the SSE result stream FIRST so we don't miss early events.
+      const stream = new EventSource(`${API}/queue/data?session_hash=${session_hash}`);
+
+      const done = new Promise((resolve, reject) => {
+        stream.onmessage = (e) => {
+          let msg;
+          try { msg = JSON.parse(e.data); } catch { return; }
+          switch (msg.msg) {
+            case "estimation":
+            case "process_starts":
+              onStatus("Processing on the Space — this can take many minutes on free CPU. Keep this tab open.");
+              break;
+            case "progress":
+              if (msg.progress_data && msg.progress_data[0]) {
+                const p = msg.progress_data[0];
+                onStatus(`Working: ${p.desc || "processing"}${p.unit ? " (" + p.unit + ")" : ""}…`);
+              }
+              break;
+            case "process_completed":
+              stream.close();
+              if (msg.success === false || (msg.output && msg.output.error)) {
+                reject(new Error((msg.output && msg.output.error) || "the Space reported an error"));
+              } else {
+                resolve((msg.output && msg.output.data) || []);
+              }
+              break;
+            case "close_stream":
+              stream.close();
+              break;
+          }
+        };
+        stream.onerror = () => { stream.close(); reject(new Error("lost the connection to the Space")); };
+      });
+
+      // Join the queue (data order matches the endpoint's inputs: [audio, dropdown]).
+      const join = await fetch(`${API}/queue/join`, {
+        method: "POST",
+        credentials: "omit",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: [fileRef, model],
+          fn_index: FN_INDEX,
+          session_hash,
+          trigger_id: null,
+        }),
+      });
+      if (!join.ok) throw new Error("queue join failed (" + join.status + ")");
+
+      return done;
     }
 
     els.go.addEventListener("click", async () => {
@@ -172,16 +252,12 @@
       setStatus("Connecting to the Space…");
 
       try {
-        const client = await Client.connect(SPACE);
-        setStatus("Uploading & processing — this can take many minutes on free CPU. Keep this tab open.");
+        setStatus("Uploading…");
+        const fileRef = await uploadFile(chosen);
 
-        const out = await client.predict("/flip", {
-          audio: chosen,           // @gradio/client accepts a File/Blob directly
-          model: els.model.value,
-        });
+        const data = await runFlip(fileRef, els.model.value, setStatus);
 
-        // out.data = [zip File, summary markdown, ...stem audio previews]
-        const data = out.data || [];
+        // data = [zip File, summary markdown, ...stem audio previews]
         const zip = data[0];
         const summaryMd = data[1] || "";
         const previews = data.slice(2);
