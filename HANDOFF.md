@@ -51,8 +51,27 @@
   needs a frontier install and CI stays offline; syntheon is an opt-in refiner (`use_synth=True`).
   Every M5 entry point is try/except-wrapped → falls back to the sampler path (Invariants #4/#7).
   RT60 is gated on the router's `wet` flag (a dry-but-sustained tone's Schroeder slope
-  extrapolates to a bogus huge decay). **⚠️ NOT YET REDEPLOYED** — M4 fix + M5 both await the
-  user's redeploy go-ahead. Next: M6 (dataset scaffold).
+  extrapolates to a bogus huge decay).
+- **2026-07-07 (Opus, redeploy + M6):** **REDEPLOYED — live transcription outage confirmed
+  FIXED.** Pushed M4 tflite→onnxruntime fix + M5 to the Space; rebuilt to RUNNING (~8 min);
+  live `gradio_client` fixture round trip via `/flip` returned **140 notes** (song.mid 70 +
+  drums.mid 70) — previously ZERO on every stem. Space is healthy and transcribing.
+  **M6 complete.** Full fast suite green: **63 tests** (was 49; +14 dataset). New `dataset/`
+  package: `synth_gen.py` (deterministic torchsynth `Voice` → (audio,params); 78-param vector),
+  `effects_gen.py` (seeded dasp-pytorch chain EQ→comp→distortion → (wet,params); 25-param vector),
+  `build.py` (both → `datasets.Dataset` with `synth`/`effects` configs + `publish()` to an HF
+  datasets repo + dataset card). **Gate MET:** save/`load_from_disk` round trip identical;
+  deterministic regeneration from seeds (synth AND effects) bit-for-bit; torchsynth+dasp+datasets
+  verified installing+RUNNING against numpy 2.2/torch 2.12 in an isolated probe venv first
+  (Invariant #2). **Two design calls:** (1) torchsynth 1.0.2 imports the
+  `pytorch_lightning.core.lightning` path removed in PL 2.x — `synth_gen._install_lightning_shim()`
+  aliases it, so no PL pin / no env downgrade. (2) `datasets` 5.x `Audio` feature needs
+  `torchcodec`+FFmpeg to encode — avoided by storing audio as raw `float32` array columns +
+  `sample_rate` (waveform exact, codec-free, more deterministic). **Dataset deps are in
+  `dataset/requirements.txt`, deliberately NOT in the app `requirements.txt`** — the Space never
+  installs torchsynth/dasp/PL (Invariants #2/#3; dataset track is independent per PLAN.md).
+  **`publish()` NOT yet run** — needs the user's HF token/go-ahead to create the public datasets
+  repo. Next: M7 (static web frontend against the live Space).
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
@@ -103,10 +122,14 @@
       loadable .vital; match-EQ render decreases auraloss vs target (49 tests green). Decided
       AGAINST hard-requiring dasp-pytorch/syntheon/pedalboard — only `auraloss` (MIT) added,
       verified clean (Invariant #2); the rest are numpy/scipy+JSON so CI stays offline.
-- [ ] **M6 — Dataset scaffold.** `dataset/`: torchsynth (audio, params) generator + dasp wet/param
-      effect pairs; publish generator + seeds (NOT terabytes of audio) as an HF `datasets` repo
-      (needs user token). *Gate: `datasets.load_dataset` round trip; deterministic regeneration
-      from seeds.*
+- [x] **M6 — Dataset scaffold.** DONE. `dataset/`: `synth_gen.py` (deterministic torchsynth
+      `Voice` → (audio, 78-params), PL2 compat shim), `effects_gen.py` (seeded dasp chain
+      EQ→comp→distortion → (wet, 25-params)), `build.py` (both → `datasets.Dataset` `synth`/
+      `effects` configs + `publish()` to HF datasets repo + card). Audio stored as raw float32
+      arrays (avoids `datasets` 5.x `Audio`→torchcodec/FFmpeg dep). Deps in
+      `dataset/requirements.txt`, kept OUT of app `requirements.txt` (Space never installs them).
+      **Gate MET:** `load_from_disk` round trip identical + deterministic regen from seeds (synth
+      + effects), 63 tests green. **`publish()` awaits user HF token** to create the public repo.
 - [ ] **M7 — Static web frontend.** `web/index.html` + `@gradio/client` against the Space API;
       GitHub Pages-ready. *Gate: static page round trip against the live Space.*
 

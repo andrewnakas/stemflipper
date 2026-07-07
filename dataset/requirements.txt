@@ -1,0 +1,15 @@
+# StemFlipper DATASET-track deps — SEPARATE from the app's requirements.txt.
+# These are for generating/publishing the synthetic (audio→params) dataset and
+# must NOT be added to the app requirements: the deployed Space never runs the
+# generator, and keeping torchsynth/dasp/pytorch-lightning off the Space keeps
+# its build small and its dep graph clean (HANDOFF Invariants #2/#3).
+#
+# Verified to resolve + run against the repo's numpy 2.2 / torch 2.12 env.
+# NOTE: torchsynth 1.0.2 imports the pytorch_lightning.core.lightning path that
+# PL 2.x removed; dataset/synth_gen.py shims it — no version pin needed.
+torchsynth>=1.0.2
+dasp-pytorch>=0.0.1
+datasets>=2.14
+huggingface_hub>=0.20
+# pytorch-lightning is a torchsynth dependency (pulled transitively); the shim
+# makes 2.x work, so we don't pin it.
