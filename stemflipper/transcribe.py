@@ -26,6 +26,26 @@ _PITCH_RANGES = {
 }
 
 
+def _onnx_model_path():
+    """The basic-pitch ICASSP-2022 model in ONNX form, or None if unavailable.
+
+    We FORCE the ONNX backend rather than let basic-pitch auto-pick. Its default
+    priority is tf > coreml > tflite > onnx, and on Linux (the Space) `tflite-runtime`
+    is pulled in as a transitive dep of basic-pitch — but tflite-runtime's wheels are
+    compiled against numpy 1.x and hard-crash under numpy 2.x (`_ARRAY_API not found`),
+    which silently zeroed every pitched stem (drums survived because they don't use
+    basic-pitch). onnxruntime is numpy-2 clean. Passing the .onnx path explicitly
+    sidesteps the whole backend-priority problem. Adding `onnxruntime` to requirements
+    was necessary but NOT sufficient — tflite still won the priority race.
+    """
+    try:
+        from basic_pitch import FilenameSuffix, build_icassp_2022_model_path
+
+        return build_icassp_2022_model_path(FilenameSuffix.onnx)
+    except Exception:
+        return None
+
+
 def transcribe_pitched(audio_path: str | Path, stem_name: str = "other") -> list[dict]:
     from basic_pitch.inference import predict
 
@@ -33,6 +53,9 @@ def transcribe_pitched(audio_path: str | Path, stem_name: str = "other") -> list
     kwargs = {}
     if fmin is not None:
         kwargs = {"minimum_frequency": fmin, "maximum_frequency": fmax}
+    onnx_path = _onnx_model_path()
+    if onnx_path is not None:
+        kwargs["model_or_model_path"] = onnx_path
     _, midi_data, _ = predict(str(audio_path), **kwargs)
 
     notes = []

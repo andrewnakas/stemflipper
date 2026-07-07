@@ -193,10 +193,34 @@
     async function runFlip(fileRef, model, onStatus) {
       const session_hash = sessionHash();
 
-      // Open the SSE result stream FIRST so we don't miss early events.
-      const stream = new EventSource(`${API}/queue/data?session_hash=${session_hash}`);
+      // JOIN FIRST, then open the SSE stream. Opening the stream before the join
+      // registers the session_hash races the Gradio 6.x queue server, which then
+      // replies `session_not_found`/`unexpected_error` and the job hangs. (Order
+      // matters — this is what @gradio/client does internally.)
+      const join = await fetch(`${API}/queue/join`, {
+        method: "POST",
+        credentials: "omit",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          data: [fileRef, model],       // input order: [audio, dropdown]
+          fn_index: FN_INDEX,
+          session_hash,
+          trigger_id: null,
+        }),
+      });
+      if (!join.ok) throw new Error("queue join failed (" + join.status + ")");
 
-      const done = new Promise((resolve, reject) => {
+      // Connect the result stream, retrying a couple of times if the server still
+      // reports the session as unregistered (belt-and-suspenders against the race).
+      return openResultStream(session_hash, onStatus, 3);
+    }
+
+    function openResultStream(session_hash, onStatus, retriesLeft) {
+      return new Promise((resolve, reject) => {
+        const stream = new EventSource(`${API}/queue/data?session_hash=${session_hash}`);
+        let settled = false;
+        const finish = (fn, arg) => { if (!settled) { settled = true; stream.close(); fn(arg); } };
+
         stream.onmessage = (e) => {
           let msg;
           try { msg = JSON.parse(e.data); } catch { return; }
@@ -212,36 +236,29 @@
               }
               break;
             case "process_completed":
-              stream.close();
               if (msg.success === false || (msg.output && msg.output.error)) {
-                reject(new Error((msg.output && msg.output.error) || "the Space reported an error"));
+                finish(reject, new Error((msg.output && msg.output.error) || "the Space reported an error"));
               } else {
-                resolve((msg.output && msg.output.data) || []);
+                finish(resolve, (msg.output && msg.output.data) || []);
+              }
+              break;
+            case "unexpected_error":
+              // A near-simultaneous join/stream race can leave the session briefly
+              // unregistered; retry the stream before giving up.
+              if (msg.session_not_found && retriesLeft > 0) {
+                settled = true; stream.close();
+                setTimeout(() => resolve(openResultStream(session_hash, onStatus, retriesLeft - 1)), 500);
+              } else {
+                finish(reject, new Error(msg.message || "the Space reported an unexpected error"));
               }
               break;
             case "close_stream":
-              stream.close();
+              finish(resolve, null);   // shouldn't precede process_completed, but don't hang
               break;
           }
         };
-        stream.onerror = () => { stream.close(); reject(new Error("lost the connection to the Space")); };
+        stream.onerror = () => finish(reject, new Error("lost the connection to the Space"));
       });
-
-      // Join the queue (data order matches the endpoint's inputs: [audio, dropdown]).
-      const join = await fetch(`${API}/queue/join`, {
-        method: "POST",
-        credentials: "omit",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          data: [fileRef, model],
-          fn_index: FN_INDEX,
-          session_hash,
-          trigger_id: null,
-        }),
-      });
-      if (!join.ok) throw new Error("queue join failed (" + join.status + ")");
-
-      return done;
     }
 
     els.go.addEventListener("click", async () => {
@@ -256,6 +273,7 @@
         const fileRef = await uploadFile(chosen);
 
         const data = await runFlip(fileRef, els.model.value, setStatus);
+        if (!data || !data.length) throw new Error("the Space returned no result (it may have errored mid-job)");
 
         // data = [zip File, summary markdown, ...stem audio previews]
         const zip = data[0];
