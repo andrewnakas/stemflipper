@@ -15,7 +15,14 @@ short_description: Song → stems → MIDI → editable instruments → DAW bund
 # 🎛️ StemFlipper
 
 Upload a song → AI source-separation into stems → each stem becomes **transcribed MIDI +
-a playable sliced-sample instrument (SFZ)** → download a **DAW project bundle**:
+a playable sliced-sample instrument (SFZ)** → download a **DAW project bundle**.
+
+**Try it:** [live web app](https://andrewnakas.github.io/stemflipper/) ·
+[Hugging Face Space](https://huggingface.co/spaces/nakas/stemflipper) ·
+[parameter dataset](https://huggingface.co/datasets/nakas/stemflipper-dataset)
+
+The web app in [`web/`](web/) is a static, build-step-free page that calls the Space's
+API via `@gradio/client`; it is served from GitHub Pages. What the bundle contains:
 
 ```
 song/

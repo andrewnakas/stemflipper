@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>StemFlipper — song → DAW project</title>
+  <meta name="description" content="Upload a song, get back stems + MIDI + sampler instruments + a Reaper project. Runs on the StemFlipper Hugging Face Space." />
+  <style>
+    :root {
+      --bg: #0f1115; --panel: #171a21; --panel2: #1f232d; --ink: #e8eaf0;
+      --muted: #99a0b0; --accent: #ffb454; --accent2: #6ad5c0; --line: #2a2f3a;
+      --err: #ff6b6b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--ink);
+      font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 32px 20px 64px; }
+    header h1 { margin: 0 0 4px; font-size: 30px; letter-spacing: -0.5px; }
+    header h1 .k { color: var(--accent); }
+    header p { margin: 0 0 24px; color: var(--muted); }
+    .card {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+      padding: 20px; margin-bottom: 18px;
+    }
+    label.field { display: block; font-size: 13px; color: var(--muted); margin: 0 0 6px; }
+    .drop {
+      border: 1.5px dashed var(--line); border-radius: 12px; padding: 26px 16px;
+      text-align: center; cursor: pointer; transition: border-color .15s, background .15s;
+      background: var(--panel2);
+    }
+    .drop:hover, .drop.hot { border-color: var(--accent); background: #23262f; }
+    .drop strong { color: var(--ink); }
+    .drop .hint { color: var(--muted); font-size: 13px; margin-top: 6px; }
+    input[type=file] { display: none; }
+    select {
+      width: 100%; background: var(--panel2); color: var(--ink); border: 1px solid var(--line);
+      border-radius: 9px; padding: 9px 10px; font-size: 14px; margin-top: 6px;
+    }
+    button.go {
+      width: 100%; margin-top: 16px; padding: 12px; font-size: 15px; font-weight: 600;
+      color: #1a1206; background: var(--accent); border: 0; border-radius: 10px; cursor: pointer;
+    }
+    button.go:disabled { opacity: .5; cursor: not-allowed; }
+    .status { margin-top: 14px; font-size: 14px; color: var(--muted); min-height: 20px; }
+    .status.err { color: var(--err); }
+    .bar { height: 6px; background: var(--panel2); border-radius: 4px; overflow: hidden; margin-top: 10px; display: none; }
+    .bar.on { display: block; }
+    .bar > i { display: block; height: 100%; width: 30%; background: linear-gradient(90deg, var(--accent), var(--accent2));
+      border-radius: 4px; animation: slide 1.2s ease-in-out infinite; }
+    @keyframes slide { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+    #result { display: none; }
+    #result.on { display: block; }
+    a.dl {
+      display: inline-block; background: var(--accent2); color: #06231c; font-weight: 600;
+      padding: 11px 16px; border-radius: 10px; text-decoration: none;
+    }
+    .summary { background: var(--panel2); border-radius: 10px; padding: 12px 14px; margin-top: 14px;
+      font-size: 13px; overflow-x: auto; }
+    .summary table { border-collapse: collapse; width: 100%; }
+    .summary th, .summary td { border: 1px solid var(--line); padding: 5px 8px; text-align: left; white-space: nowrap; }
+    .stems { margin-top: 14px; display: grid; gap: 10px; }
+    .stem { background: var(--panel2); border-radius: 10px; padding: 10px 12px; }
+    .stem span { font-size: 13px; color: var(--muted); }
+    audio { width: 100%; margin-top: 6px; }
+    footer { color: var(--muted); font-size: 12px; margin-top: 28px; text-align: center; }
+    footer a { color: var(--accent2); }
+    code { background: var(--panel2); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Stem<span class="k">Flipper</span></h1>
+      <p>Upload a song → get stems, MIDI, sampler instruments, and a Reaper project. Processing runs on the public Hugging&nbsp;Face Space (free CPU — a full song can take 15–25&nbsp;min).</p>
+    </header>
+
+    <div class="card">
+      <label class="field" for="file">Song</label>
+      <div class="drop" id="drop">
+        <strong id="dropLabel">Drop an audio file or click to choose</strong>
+        <div class="hint">wav / mp3 / flac / m4a · up to ~8&nbsp;min</div>
+      </div>
+      <input type="file" id="file" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg" />
+
+      <label class="field" for="model" style="margin-top:16px">Separation model</label>
+      <select id="model">
+        <option value="htdemucs">htdemucs — 4 stems (default)</option>
+        <option value="htdemucs_6s">htdemucs_6s — adds guitar + piano (piano weak)</option>
+      </select>
+
+      <button class="go" id="go" disabled>Flip it 🎚️</button>
+      <div class="bar" id="bar"><i></i></div>
+      <div class="status" id="status"></div>
+    </div>
+
+    <div class="card" id="result">
+      <a class="dl" id="download" download>⬇︎ Download DAW project bundle (.zip)</a>
+      <div class="summary" id="summary"></div>
+      <div class="stems" id="stems"></div>
+    </div>
+
+    <footer>
+      Powered by the <a id="spaceLink" href="#" target="_blank" rel="noopener">StemFlipper Space</a>.
+      Source &amp; dataset on <a href="https://huggingface.co/nakas" target="_blank" rel="noopener">Hugging Face</a>.
+    </footer>
+  </div>
+
+  <script type="module">
+    // @gradio/client 2.x matches the Space's Gradio 6.x server (uses the /gradio_api
+    // prefix). jsDelivr's +esm endpoint bundles the browser build with deps resolved,
+    // so it loads directly in a static <script type=module> with no build step.
+    import { Client } from "https://cdn.jsdelivr.net/npm/@gradio/client@2.3.0/+esm";
+
+    // The live StemFlipper Space. Override with ?space=user/name for testing.
+    const SPACE = new URLSearchParams(location.search).get("space") || "nakas/stemflipper";
+    document.getElementById("spaceLink").href = "https://huggingface.co/spaces/" + SPACE;
+
+    const els = {
+      drop: document.getElementById("drop"),
+      file: document.getElementById("file"),
+      dropLabel: document.getElementById("dropLabel"),
+      model: document.getElementById("model"),
+      go: document.getElementById("go"),
+      bar: document.getElementById("bar"),
+      status: document.getElementById("status"),
+      result: document.getElementById("result"),
+      download: document.getElementById("download"),
+      summary: document.getElementById("summary"),
+      stems: document.getElementById("stems"),
+    };
+
+    let chosen = null;
+
+    function pick(f) {
+      if (!f) return;
+      chosen = f;
+      els.dropLabel.textContent = f.name;
+      els.go.disabled = false;
+    }
+
+    els.drop.addEventListener("click", () => els.file.click());
+    els.file.addEventListener("change", (e) => pick(e.target.files[0]));
+    ["dragover", "dragenter"].forEach((ev) =>
+      els.drop.addEventListener(ev, (e) => { e.preventDefault(); els.drop.classList.add("hot"); })
+    );
+    ["dragleave", "drop"].forEach((ev) =>
+      els.drop.addEventListener(ev, (e) => { e.preventDefault(); els.drop.classList.remove("hot"); })
+    );
+    els.drop.addEventListener("drop", (e) => pick(e.dataTransfer.files[0]));
+
+    function setStatus(msg, isErr) {
+      els.status.textContent = msg;
+      els.status.classList.toggle("err", !!isErr);
+    }
+
+    // A Gradio FileData reference → an absolute, downloadable URL on the Space.
+    function fileUrl(fd) {
+      if (!fd) return null;
+      if (fd.url) return fd.url;
+      // Fallback for a bare {path}: Gradio 6.x serves files under /gradio_api/file=.
+      if (fd.path) return `https://${SPACE.replace("/", "-")}.hf.space/gradio_api/file=${fd.path}`;
+      return null;
+    }
+
+    els.go.addEventListener("click", async () => {
+      if (!chosen) return;
+      els.go.disabled = true;
+      els.result.classList.remove("on");
+      els.bar.classList.add("on");
+      setStatus("Connecting to the Space…");
+
+      try {
+        const client = await Client.connect(SPACE);
+        setStatus("Uploading & processing — this can take many minutes on free CPU. Keep this tab open.");
+
+        const out = await client.predict("/flip", {
+          audio: chosen,           // @gradio/client accepts a File/Blob directly
+          model: els.model.value,
+        });
+
+        // out.data = [zip File, summary markdown, ...stem audio previews]
+        const data = out.data || [];
+        const zip = data[0];
+        const summaryMd = data[1] || "";
+        const previews = data.slice(2);
+
+        const zipUrl = fileUrl(zip);
+        if (zipUrl) {
+          els.download.href = zipUrl;
+          els.download.style.display = "inline-block";
+        } else {
+          els.download.style.display = "none";
+        }
+
+        els.summary.innerHTML = renderSummary(summaryMd);
+
+        els.stems.innerHTML = "";
+        const names = ["drums", "bass", "vocals", "other", "guitar", "piano"];
+        previews.forEach((p, i) => {
+          const url = fileUrl(p);
+          if (!url) return;
+          const box = document.createElement("div");
+          box.className = "stem";
+          box.innerHTML = `<span>${names[i] || "stem " + (i + 1)}</span>`;
+          const a = document.createElement("audio");
+          a.controls = true; a.src = url;
+          box.appendChild(a);
+          els.stems.appendChild(box);
+        });
+
+        els.result.classList.add("on");
+        setStatus("Done ✓");
+      } catch (err) {
+        console.error(err);
+        setStatus("Failed: " + (err?.message || err) + " — the Space may be asleep or busy; try again in a moment.", true);
+      } finally {
+        els.bar.classList.remove("on");
+        els.go.disabled = false;
+      }
+    });
+
+    // Minimal, safe markdown-table → HTML (the Space's summary is a pipe table).
+    function renderSummary(md) {
+      const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+      const lines = md.split("\n").map((l) => l.trim()).filter(Boolean);
+      const rows = lines.filter((l) => l.startsWith("|") && !/^\|[\s|:-]+\|?$/.test(l));
+      if (!rows.length) return esc(md).replace(/\n/g, "<br>");
+      let html = "<table>";
+      rows.forEach((r, idx) => {
+        const cells = r.split("|").slice(1, -1).map((c) => esc(c.trim()));
+        const tag = idx === 0 ? "th" : "td";
+        html += "<tr>" + cells.map((c) => `<${tag}>${c}</${tag}>`).join("") + "</tr>";
+      });
+      return html + "</table>";
+    }
+  </script>
+</body>
+</html>
