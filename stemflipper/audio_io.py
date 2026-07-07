@@ -24,8 +24,13 @@ def save_audio(path: str | Path, audio: np.ndarray, sr: int) -> Path:
 
 
 def duration_of(path: str | Path) -> float:
-    info = sf.info(str(path))
-    return info.frames / info.samplerate
+    try:
+        info = sf.info(str(path))
+        return info.frames / info.samplerate
+    except Exception:  # formats libsndfile can't probe (some mp3/m4a) — decode instead
+        import librosa
+
+        return float(librosa.get_duration(path=str(path)))
 
 
 def is_silent(audio: np.ndarray, threshold: float = 1e-4) -> bool:

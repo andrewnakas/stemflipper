@@ -66,11 +66,12 @@ def transcribe_drums(audio_path: str | Path) -> list[dict]:
             continue
         mag = np.abs(np.fft.rfft(seg, n=window))
         total = mag.sum() or 1.0
-        centroid = float((freqs * mag).sum() / total)
         low_ratio = float(mag[freqs < 150].sum() / total)
+        high_ratio = float(mag[freqs > 5000].sum() / total)
+        # a coincident hat adds ~0.4 high-band ratio, so only near-pure HF is a hat
         if low_ratio > 0.25:
             pitch = GM_KICK
-        elif centroid > 4000:
+        elif high_ratio > 0.7:
             pitch = GM_HAT
         else:
             pitch = GM_SNARE

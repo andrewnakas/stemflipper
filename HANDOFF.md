@@ -7,9 +7,14 @@
 
 ## STATUS (update every session)
 
-- **2026-07-07 (Fable):** M0 complete (fixture tests green, deps installed: numpy 2.2.6,
-  librosa 0.11, gradio 6.19, torch 2.12, audio-separator 0.44.2, basic-pitch 0.4.0 on
-  CoreML). M1 modules written, tests running. Nothing deployed.
+- **2026-07-07 (Fable):** M0+M1+M2 complete. Full suite green: 19 tests (18 fast + 1 slow
+  real-separation e2e). CLI verified end-to-end on the fixture: tempo 120.19, key A minor,
+  4 stems each with MIDI + SFZ, valid RPP/manifest/zip. App round trip via gradio_client OK.
+  **Timing reality check:** htdemucs separation of the 16 s fixture took ~5 min on this
+  M-series Air (MPS, likely RAM-constrained) vs the report's estimate — expect the free CPU
+  Space to be slow per song too; measure and record after deploy. Separation bleed makes the
+  "vocals" stem of the instrumental fixture non-silent (56 ghost notes) — expected, handled.
+  M3 (deploy) next: `scripts/deploy_space.py` ready, user already HF-logged-in as `nakas`.
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
@@ -19,7 +24,7 @@
 - [x] **M0 — Scaffold.** git init; PLAN.md + research/ copied; venv py3.10; MVP deps install +
       import smoke test; pytest wired; `tests/make_fixture.py` generates the deterministic
       mini-song; HANDOFF.md exists. *Gate: `pytest -k fixture` green; first commit.*
-- [ ] **M1 — Core pipeline + CLI.** Modules `stemflipper/{audio_io,analyze,separate,transcribe,
+- [x] **M1 — Core pipeline + CLI.** Modules `stemflipper/{audio_io,analyze,separate,transcribe,
       sampler,export,pipeline,__main__}.py`. Flow: load → tempo/key → htdemucs 4-stem
       (audio-separator, model configurable) → per-stem basic-pitch (bass fmin/fmax clamp;
       drums = librosa onset + spectral heuristic → GM 36/38/42) → MIDI-boundary slicing → SFZ
@@ -27,7 +32,7 @@
       + zip. *Gate: CLI produces complete bundle on fixture mix; unit tests: ≥80% pitch match on
       clean bass/lead stems, tempo ±2 BPM, SFZ has regions, RPP block-balanced, manifest valid;
       slow e2e passes.*
-- [ ] **M2 — Gradio `app.py`.** Upload (max_file_size 30 MB, cap ~8 min audio), `gr.Progress`
+- [x] **M2 — Gradio `app.py`.** Upload (max_file_size 30 MB, cap ~8 min audio), `gr.Progress`
       stages, stem previews + zip download, queue on, `spaces` import guarded (`@spaces.GPU`
       only wraps the separation call; no-op locally / on CPU Space). *Gate: `gradio_client`
       round trip on fixture returns a valid zip.*
@@ -69,6 +74,15 @@
 6. One commit per completed task; state the gate result in the commit message.
 7. The Space must never hard-fail on a stem that is silent, unpitched, or untranscribable —
    empty MIDI/instrument outputs are acceptable, crashes are not.
+
+## LOCAL-MACHINE NOTES
+
+- 2026-07-07: Homebrew ffmpeg was broken (linked stale libx265.215.dylib after an x265
+  upgrade); fixed via `brew upgrade ffmpeg` → 8.1.2. audio-separator hard-fails at init if
+  `ffmpeg -version` dies — recheck this first if separation errors reappear.
+- htdemucs weights (~84 MB) download from dl.fbaipublicfiles.com very slowly on this
+  network; cached afterward at `~/.cache/stemflipper/models`.
+- HF auth: already logged in as `nakas` (token at ~/.cache/huggingface/token).
 
 ## KEY IMPLEMENTATION FACTS (mined from research/, saves re-reading)
 
