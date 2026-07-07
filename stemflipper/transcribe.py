@@ -2,17 +2,22 @@
 
 Notes are plain dicts {pitch, start, end, velocity} — JSON-friendly, no cross-module types.
 Pitched stems: basic-pitch (Apache-2.0, TFLite/CoreML — CPU-fast).
+Keys/piano stems: ByteDance piano_transcription_inference (MIT, SOTA 96.7% onset F1,
+CPU-OK) when the router flags the stem as keys; falls back to basic-pitch on any failure.
 Drums: librosa onset detection + spectral-band heuristic -> GM map (known-weak on
 overlapping hits; the honest MVP baseline per PLAN.md; ADT upgrade is out for licensing).
 """
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 import numpy as np
 
 GM_KICK, GM_SNARE, GM_HAT = 36, 38, 42
+
+_PIANO_SR = 16000  # ByteDance model input rate
 
 # fmin/fmax clamps per stem type; bass clamp kills the #1 failure mode (octave errors)
 _PITCH_RANGES = {
@@ -32,6 +37,57 @@ def transcribe_pitched(audio_path: str | Path, stem_name: str = "other") -> list
 
     notes = []
     for inst in midi_data.instruments:
+        for n in inst.notes:
+            notes.append(
+                {
+                    "pitch": int(n.pitch),
+                    "start": round(float(n.start), 4),
+                    "end": round(float(n.end), 4),
+                    "velocity": int(n.velocity),
+                }
+            )
+    notes.sort(key=lambda n: (n["start"], n["pitch"]))
+    return notes
+
+
+# module-level cache: the ~150 MB ByteDance checkpoint loads at most once per process
+_PIANO = None
+_PIANO_FAILED = False
+
+
+def _get_piano_transcriptor():
+    global _PIANO, _PIANO_FAILED
+    if _PIANO is not None or _PIANO_FAILED:
+        return _PIANO
+    try:
+        from piano_transcription_inference import PianoTranscription
+
+        _PIANO = PianoTranscription(device="cpu")
+    except Exception:
+        _PIANO_FAILED = True  # no network / no weights — caller falls back to basic-pitch
+    return _PIANO
+
+
+def transcribe_piano(audio_path: str | Path) -> list[dict]:
+    """ByteDance high-resolution piano transcription. Writes to a temp MIDI internally,
+    then parses it to the standard note-dict format. Raises on any failure so the caller
+    can fall back to basic-pitch."""
+    import librosa
+    import pretty_midi
+
+    transcriptor = _get_piano_transcriptor()
+    if transcriptor is None:
+        raise RuntimeError("piano transcriptor unavailable")
+
+    audio, _ = librosa.load(str(audio_path), sr=_PIANO_SR, mono=True)
+    with tempfile.NamedTemporaryFile(suffix=".mid", delete=True) as tmp:
+        transcriptor.transcribe(audio, tmp.name)
+        pm = pretty_midi.PrettyMIDI(tmp.name)
+
+    notes = []
+    for inst in pm.instruments:
+        if inst.is_drum:
+            continue
         for n in inst.notes:
             notes.append(
                 {
@@ -87,11 +143,29 @@ def transcribe_drums(audio_path: str | Path) -> list[dict]:
     return notes
 
 
-def transcribe_stem(stem_name: str, audio_path: str | Path) -> dict:
-    """Return {"notes": [...], "is_drum": bool}. Never raises on empty/unpitched audio."""
+def transcribe_stem(stem_name: str, audio_path: str | Path, is_keys: bool = False) -> dict:
+    """Return {"notes": [...], "is_drum": bool}. Never raises on empty/unpitched audio.
+
+    is_keys (set by the router for piano/organ stems) routes to the ByteDance piano
+    transcriber, falling back to basic-pitch if it's unavailable or produces nothing.
+    """
     is_drum = stem_name == "drums"
-    try:
-        notes = transcribe_drums(audio_path) if is_drum else transcribe_pitched(audio_path, stem_name)
-    except Exception:
-        notes = []
-    return {"notes": notes, "is_drum": is_drum}
+    if is_drum:
+        try:
+            notes = transcribe_drums(audio_path)
+        except Exception:
+            notes = []
+        return {"notes": notes, "is_drum": True}
+
+    notes = []
+    if is_keys:
+        try:
+            notes = transcribe_piano(audio_path)
+        except Exception:
+            notes = []
+    if not notes:  # not-keys, or piano model unavailable/empty -> basic-pitch
+        try:
+            notes = transcribe_pitched(audio_path, stem_name)
+        except Exception:
+            notes = []
+    return {"notes": notes, "is_drum": False}

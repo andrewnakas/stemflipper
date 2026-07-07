@@ -5,6 +5,7 @@ separation stage is GPU-relevant, so it alone is wrapped with @spaces.GPU
 (a no-op everywhere else).
 """
 
+import os
 import tempfile
 from pathlib import Path
 
@@ -16,6 +17,11 @@ from stemflipper.pipeline import run_pipeline
 
 MAX_AUDIO_MINUTES = 8
 PREVIEW_STEMS = ("vocals", "drums", "bass", "other")
+
+# PANNs CNN14 (~340 MB) is off by default on the Space so the first request isn't stalled
+# by a cold-weights download; set STEMFLIPPER_PANNS=1 (and ideally warm the cache at build)
+# to enable the instrument classifier. The router degrades to spectral cues when off.
+USE_PANNS = os.environ.get("STEMFLIPPER_PANNS", "0") == "1"
 
 try:
     import spaces
@@ -50,6 +56,7 @@ def flip(audio_path, model, progress=gr.Progress()):
         model=model,
         progress=lambda frac, desc: progress(frac, desc=desc),
         separate_fn=_separate_fn,
+        use_panns=USE_PANNS,
     )
     manifest = result["manifest"]
 
@@ -57,13 +64,17 @@ def flip(audio_path, model, progress=gr.Progress()):
         f"**tempo** {manifest['tempo']} BPM · **key** {manifest['key']} · "
         f"**duration** {manifest['duration']:.0f}s · model `{manifest['separation_model']}`",
         "",
-        "| stem | notes | instrument |",
-        "|---|---|---|",
+        "| stem | instrument | notes | strategy | SFZ |",
+        "|---|---|---|---|---|",
     ]
     for name, meta in manifest["stems"].items():
         notes = "silent" if meta["silent"] else str(meta["n_notes"])
-        sfz = "SFZ ✓" if meta["instrument_sfz"] else "—"
-        lines.append(f"| {name} | {notes} | {sfz} |")
+        sfz = "✓" if meta["instrument_sfz"] else "—"
+        inst = meta.get("instrument", "—")
+        strat = meta.get("strategy", "—")
+        if meta.get("low_confidence"):
+            strat += " ⚠️"
+        lines.append(f"| {name} | {inst} | {notes} | {strat} | {sfz} |")
     summary = "\n".join(lines)
 
     bundle = result["bundle_dir"]

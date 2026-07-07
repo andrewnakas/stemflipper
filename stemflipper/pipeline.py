@@ -6,7 +6,7 @@ import re
 import shutil
 from pathlib import Path
 
-from . import analyze, audio_io, export, sampler, separate, transcribe
+from . import analyze, audio_io, export, router, sampler, separate, transcribe
 
 
 def run_pipeline(
@@ -17,11 +17,14 @@ def run_pipeline(
     progress=None,
     make_zip: bool = True,
     separate_fn=None,
+    use_panns: bool = True,
 ) -> dict:
-    """Full flow: analyze -> separate -> transcribe -> sampler -> bundle.
+    """Full flow: analyze -> separate -> route -> transcribe -> sampler -> bundle.
 
     separate_fn lets app.py swap in a GPU-decorated separation call (ZeroGPU);
     defaults to separate.separate_stems.
+    use_panns toggles the PANNs CNN14 instrument classifier in the router (turn off
+    to run fully offline; the router degrades to spectral cues either way).
     Returns {"bundle_dir", "zip_path", "manifest"}.
     """
 
@@ -59,14 +62,24 @@ def run_pipeline(
     stems_meta: dict[str, dict] = {}
     ordered = [s for s in separate.KNOWN_STEMS if s in stem_paths]
     for i, name in enumerate(ordered):
-        report(0.55 + 0.25 * i / len(ordered), f"Transcribing {name}")
+        report(0.5 + 0.3 * i / len(ordered), f"Analyzing & transcribing {name}")
         stem_audio, stem_sr = audio_io.load_audio(stem_paths[name], mono=True)
         silent = audio_io.is_silent(stem_audio)
-        result = (
-            {"notes": [], "is_drum": name == "drums"}
-            if silent
-            else transcribe.transcribe_stem(name, stem_paths[name])
-        )
+
+        if silent:
+            character = router.route_stem(name, stem_audio, stem_sr, [], use_panns=False)
+            result = {"notes": [], "is_drum": name == "drums"}
+        else:
+            # route first (drums bypass instrument routing); the router's is_keys flag
+            # picks the ByteDance piano transcriber over basic-pitch for keys stems.
+            # PANNs runs once here (cached); the post-transcription note overlap only
+            # escalates a borderline polyphony reading, no need to reclassify.
+            character = router.route_stem(name, stem_audio, stem_sr, [], use_panns=use_panns)
+            result = transcribe.transcribe_stem(
+                name, stem_paths[name], is_keys=character.is_keys
+            )
+            character = router.escalate_polyphony(character, result["notes"], name)
+
         tracks[name] = result
         stems_meta[name] = {
             "audio": f"stems/{name}.wav",
@@ -74,7 +87,20 @@ def run_pipeline(
             "n_notes": len(result["notes"]),
             "midi": f"midi/{name}.mid" if result["notes"] else None,
             "instrument_sfz": None,
+            "strategy": character.strategy,
+            "instrument": character.instrument,
+            "polyphonic": character.polyphonic,
+            "synth_like": character.synth_like,
+            "wet": character.wet,
+            "router_scores": character.scores,
         }
+
+    # htdemucs_6s gating: the added guitar/piano stems are documented-weak (bleed) —
+    # flag them so downstream (and the user) treat their transcription with suspicion.
+    if model == "htdemucs_6s":
+        for weak in ("piano", "guitar"):
+            if weak in stems_meta:
+                stems_meta[weak]["low_confidence"] = True
 
     for i, name in enumerate(ordered):
         report(0.8 + 0.08 * i / len(ordered), f"Building {name} instrument")

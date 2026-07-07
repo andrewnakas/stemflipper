@@ -20,6 +20,21 @@
   16 s of audio** (≈7× realtime ⇒ expect ~15–25 min for a real 3–4 min song on free CPU;
   ZeroGPU upgrade path in README when the user gets PRO). **Next task: M4** (router + PANNs
   + piano transcription). Redeploy after changes with `.venv/bin/python scripts/deploy_space.py`.
+- **2026-07-07 (Opus):** M4 complete + **fixed a live Space transcription outage.** Full fast
+  suite green: **31 tests** (was 18; +13 for router/piano/backend). New: `stemflipper/router.py`
+  (stem-character router + PANNs CNN14 classifier, all lazy-imported & graceful), ByteDance
+  piano transcription in `transcribe.py` (routes on router `is_keys`, falls back to basic-pitch),
+  router metadata (`strategy`/`instrument`/`polyphonic`/`synth_like`/`wet`/`router_scores`) now
+  in the manifest — this is M5's input contract. Router matrix (offline, no weights needed):
+  mono_synth→synth-fit, mono_acoustic→sampler, poly_chord→sampler-phrase. **SPACE BUG FIXED:**
+  the live Space silently produced ZERO notes on every stem — `tflite-runtime` ships wheels
+  compiled against numpy 1.x and hard-crashes under the Space's numpy 2.2.6 (`_ARRAY_API not
+  found`), swallowed by `transcribe_stem`'s except→empty. Fix: requirements.txt now installs
+  `onnxruntime` instead of `tflite-runtime`; basic-pitch auto-selects ONNX on Linux (backend
+  priority tf>coreml>tflite>onnx). Verified the ONNX backend transcribes locally (24 notes on
+  the bass fixture). **PANNs is OFF on the Space by default** (`STEMFLIPPER_PANNS=1` to enable):
+  the 340 MB CNN14 download would stall the first request; router degrades to spectral cues.
+  **⚠️ NOT YET REDEPLOYED** — awaiting user go-ahead (redeploy would push M4 + the fix live).
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
@@ -48,13 +63,17 @@
       HANDOFF.md, research/, tests/) stay out of the public Space. To free cpu-basic quota the
       user had me pause their Spaces: timberlineWeatherData, Deep-nowcast, DWD_Icon_Forcast
       (reversible in each Space's settings; free limit ≈ 2 concurrent running Spaces).
-- [ ] **M4 — Router + analysis upgrades.** PANNs CNN14 (`panns-inference`, MIT) buckets the
-      "other" stem; router: polyphonic = >0.2 fraction of note-time overlapping → sampler-phrase;
-      mono+synth-like (PANNs bucket + high spectral flatness of sustain) → mark for synth-fit;
-      mono+acoustic → sampler. `piano-transcription-inference` for keys-classified stems;
-      `htdemucs_6s` behind a flag (piano weak — gate it). Synthetic mono-synth/chord fixtures.
-      *Gate: router test matrix passes; `pip install` of new deps verified before adding to
-      requirements.txt.*
+- [x] **M4 — Router + analysis upgrades.** DONE. `stemflipper/router.py`: PANNs CNN14 classifier
+      + stem-character router (polyphony via chroma concurrency — robust to basic-pitch octave
+      ghosts, cross-checked with note-overlap; synth-vs-acoustic via PANNs bucket → spectral
+      sustain/flatness fallback; dry/wet informational). Strategy per stem: sampler-phrase (poly) /
+      synth-fit (mono+synth) / sampler (mono+acoustic); drums bypass to sampler; bass forced mono.
+      ByteDance `transcribe_piano` in transcribe.py (router `is_keys` gate → basic-pitch fallback).
+      htdemucs_6s piano/guitar stems flagged `low_confidence` in manifest. Router metadata in
+      manifest + app summary table. *Gate MET: router matrix passes offline (31 tests green);
+      panns-inference 0.1.1 + piano-transcription-inference 0.0.6 verified installing clean,
+      numpy-2 compatible, before touching requirements.txt.* NOTE: also fixed the Space's
+      tflite/numpy-2 transcription crash — see STATUS.
 - [ ] **M5 — Effects + synth-fit (frontier, best-effort, flagged).** EQ match: dasp-pytorch
       (git, PIN A SHA) `auto_eq` + auraloss MultiResolutionSTFT; reverb: blind IR → convolution;
       synth-fit (mono+synth stems only): syntheon (PyPI 0.1.0) warm-start → `.vital` preset in

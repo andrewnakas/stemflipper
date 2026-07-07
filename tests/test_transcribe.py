@@ -54,3 +54,23 @@ def test_silent_stem_never_raises(tmp_path):
     assert result["notes"] == []
     drum_result = transcribe.transcribe_stem("drums", silent)
     assert drum_result["is_drum"] and drum_result["notes"] == []
+
+
+def test_basic_pitch_backend_produces_notes(fixture_song):
+    """Regression guard for the Space's numpy-2 vs tflite-runtime crash: whatever backend
+    basic-pitch selects (CoreML locally, ONNX on Linux) must actually transcribe, not
+    silently return zero notes. The bug manifested as an empty result, not an exception."""
+    notes = transcribe.transcribe_pitched(fixture_song["paths"]["bass"], "bass")
+    assert len(notes) >= 5, "basic-pitch backend produced no notes — backend is broken"
+
+
+def test_keys_falls_back_to_basic_pitch(fixture_song, monkeypatch):
+    """is_keys=True routes to the piano model; if it's unavailable/empty the stem still
+    transcribes via basic-pitch rather than coming back empty."""
+    monkeypatch.setattr(
+        transcribe, "transcribe_piano",
+        lambda p: (_ for _ in ()).throw(RuntimeError("piano model unavailable")),
+    )
+    result = transcribe.transcribe_stem("piano", fixture_song["paths"]["lead"], is_keys=True)
+    assert not result["is_drum"]
+    assert len(result["notes"]) >= 5, "keys fallback to basic-pitch produced no notes"

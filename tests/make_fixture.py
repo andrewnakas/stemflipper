@@ -172,6 +172,72 @@ def build_fixture(outdir: Path) -> dict:
     return {"dir": outdir, "paths": paths, "truth": truth}
 
 
+def _harmonic_note(freq: float, dur_s: float, n_harm: int, gain: float, decays: bool) -> np.ndarray:
+    """A note built from n_harm sine partials. decays=True gives a plucked/percussive
+    (acoustic-like) envelope; decays=False gives a flat sustain (synth-pad-like)."""
+    n = int(dur_s * SR)
+    t = np.arange(n) / SR
+    out = np.zeros(n)
+    for k in range(1, n_harm + 1):
+        if freq * k >= SR / 2:
+            break
+        out += np.sin(2 * np.pi * freq * k * t) / k
+    if decays:
+        out *= np.exp(-t * 6.0) * _env(n, 0.004, 0.02)
+    else:
+        out *= _env(n, 0.02, 0.05)  # long flat sustain, minimal attack/release
+    return out * gain / max(1e-9, np.abs(out).max())
+
+
+def build_router_fixtures(outdir: Path) -> dict:
+    """Three deterministic single-instrument stems that exercise the router's three routes:
+      mono_synth : one voice at a time, flat sustain, few partials  -> synth-fit
+      mono_acoustic : one voice at a time, decaying, rich partials  -> sampler
+      poly_chord : three simultaneous voices (triads)               -> sampler-phrase
+    All 8 s at 120 BPM. Returns {"dir", "paths"}.
+    """
+    outdir = Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    dur = 8.0
+    n_total = int(dur * SR)
+
+    # --- mono synth lead: sequential notes, sustained, synth-like (few partials, flat) ---
+    mono_synth = np.zeros(n_total)
+    synth_seq = [69, 72, 76, 72, 69, 74, 77, 74]  # one note per beat, never overlapping
+    for i, pitch in enumerate(synth_seq):
+        start = i * BEAT
+        note = _harmonic_note(midi_to_hz(pitch), BEAT * 0.95, n_harm=3, gain=0.8, decays=False)
+        _place(mono_synth, note, start)
+
+    # --- mono acoustic: sequential decaying plucks, rich partials ---
+    mono_acoustic = np.zeros(n_total)
+    for i, pitch in enumerate(synth_seq):
+        start = i * BEAT
+        note = _harmonic_note(midi_to_hz(pitch), BEAT * 0.95, n_harm=18, gain=0.8, decays=True)
+        _place(mono_acoustic, note, start)
+
+    # --- polyphonic chord pad: stacked triads, all voices sound together ---
+    poly_chord = np.zeros(n_total)
+    triads = [(57, 60, 64), (53, 57, 60), (55, 59, 62), (57, 60, 64)]  # Am F G Am, 2 beats each
+    for c, chord in enumerate(triads):
+        start = c * 2 * BEAT
+        for pitch in chord:
+            note = _harmonic_note(midi_to_hz(pitch), 2 * BEAT * 0.95, n_harm=6, gain=0.5, decays=False)
+            _place(poly_chord, note, start)
+
+    paths = {}
+    for name, audio in (
+        ("mono_synth", mono_synth),
+        ("mono_acoustic", mono_acoustic),
+        ("poly_chord", poly_chord),
+    ):
+        audio = audio / max(1e-9, np.abs(audio).max()) * 0.89
+        paths[name] = outdir / f"{name}.wav"
+        sf.write(paths[name], audio, SR)
+
+    return {"dir": outdir, "paths": paths}
+
+
 if __name__ == "__main__":
     out = build_fixture(Path(sys.argv[1] if len(sys.argv) > 1 else "tests/assets"))
     print(f"fixture written to {out['dir']}")
