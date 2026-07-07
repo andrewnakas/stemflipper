@@ -10,9 +10,10 @@ from pathlib import Path
 from huggingface_hub import HfApi
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-EXCLUDE = [
-    ".git/*", ".venv/*", "__pycache__/*", "*/__pycache__/*", ".pytest_cache/*",
-    "tests/assets/*", "models/*", "out/*", ".claude/*", ".DS_Store",
+# Only runtime files go to the (public) Space — internal docs (PLAN.md, HANDOFF.md,
+# research/), tests, and scripts stay local-only.
+ALLOW = [
+    "app.py", "requirements.txt", "packages.txt", "README.md", "stemflipper/*.py",
 ]
 
 
@@ -32,8 +33,8 @@ def main():
         repo_id=space_id,
         repo_type="space",
         folder_path=str(REPO_ROOT),
-        ignore_patterns=EXCLUDE,
-        commit_message="deploy from local repo",
+        allow_patterns=ALLOW,
+        commit_message="deploy from local repo (runtime files only)",
     )
     print(f"deployed: https://huggingface.co/spaces/{space_id}")
 

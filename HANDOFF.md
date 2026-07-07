@@ -15,6 +15,11 @@
   Space to be slow per song too; measure and record after deploy. Separation bleed makes the
   "vocals" stem of the instrumental fixture non-silent (56 ghost notes) — expected, handled.
   M3 (deploy) next: `scripts/deploy_space.py` ready, user already HF-logged-in as `nakas`.
+- **2026-07-07 (Fable, later):** M3 complete — Space LIVE at
+  https://huggingface.co/spaces/nakas/stemflipper. Live fixture round trip: **1.9 min for
+  16 s of audio** (≈7× realtime ⇒ expect ~15–25 min for a real 3–4 min song on free CPU;
+  ZeroGPU upgrade path in README when the user gets PRO). **Next task: M4** (router + PANNs
+  + piano transcription). Redeploy after changes with `.venv/bin/python scripts/deploy_space.py`.
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
@@ -36,10 +41,13 @@
       stages, stem previews + zip download, queue on, `spaces` import guarded (`@spaces.GPU`
       only wraps the separation call; no-op locally / on CPU Space). *Gate: `gradio_client`
       round trip on fixture returns a valid zip.*
-- [ ] **M3 — Deploy free CPU Space (BLOCKS ON USER: `hf auth login`).** Create Space
-      `stemflipper` (sdk: gradio, cpu-basic), push repo, live round trip. README documents the
-      ZeroGPU upgrade path (Settings → Hardware; code already compatible). *Gate: public URL
-      processes a song end-to-end.*
+- [x] **M3 — Deploy free CPU Space.** LIVE at https://huggingface.co/spaces/nakas/stemflipper
+      (gate passed: fixture round trip via gradio_client in 1.9 min, valid bundle).
+      NOTE: deploy uploads RUNTIME FILES ONLY (`scripts/deploy_space.py` allow-list: app.py,
+      stemflipper/, requirements.txt, packages.txt, README.md) — internal docs (PLAN.md,
+      HANDOFF.md, research/, tests/) stay out of the public Space. To free cpu-basic quota the
+      user had me pause their Spaces: timberlineWeatherData, Deep-nowcast, DWD_Icon_Forcast
+      (reversible in each Space's settings; free limit ≈ 2 concurrent running Spaces).
 - [ ] **M4 — Router + analysis upgrades.** PANNs CNN14 (`panns-inference`, MIT) buckets the
       "other" stem; router: polyphonic = >0.2 fraction of note-time overlapping → sampler-phrase;
       mono+synth-like (PANNs bucket + high spectral flatness of sustain) → mark for synth-fit;
