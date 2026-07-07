@@ -84,6 +84,21 @@
   `credentials:"omit"`. Verified in a real browser from the github.io origin (upload 200 + join 200,
   no CORS errors) and the full REST flow end-to-end. See the [[hf-space-cors-credentials-trap]]
   memory. **Reminder for the user: revoke the HF token pasted in chat and rotate it.**
+- **2026-07-07 (Opus, real-song bug fixes):** user testing a real song exposed TWO live bugs the
+  earlier "outage fixed" claim had MISSED (that claim was wrong — I counted a merged `song.mid`
+  total and mistook drum notes for working pitched transcription). (1) **Drums-only transcription:**
+  on the Linux Space, `tflite-runtime` is a transitive dep of basic-pitch and its backend priority
+  (tf>coreml>tflite>onnx) picked tflite BEFORE onnx → numpy-2 `_ARRAY_API` crash on every pitched
+  stem; drums survived (librosa, not basic-pitch). Swapping requirements to onnxruntime was NOT
+  enough. **Real fix:** `transcribe_pitched` now passes the explicit `.onnx` model path
+  (`build_icassp_2022_model_path(FilenameSuffix.onnx)`) to `predict()`, forcing onnxruntime.
+  **Verified live per-instrument:** vocals 53, drums 74, bass 25, other 62 (was drums-only).
+  (2) **Web page hung on "Uploading…":** opened the SSE `queue/data` stream BEFORE `queue/join`
+  registered the session → Gradio replied `session_not_found`, which the `onmessage` switch didn't
+  handle → silent hang. **Fix:** join first, then stream; handle `unexpected_error`/retry; guard
+  empty result. Verified live: full upload→join→SSE→progress flow, no session_not_found, errors
+  surface instead of hanging. Both redeployed/pushed. **LESSON: always verify Space transcription
+  with a per-instrument breakdown, never a merged total.** See [[space-tflite-numpy2-trap]].
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
