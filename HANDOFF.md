@@ -129,9 +129,21 @@
       arrays (avoids `datasets` 5.x `Audio`→torchcodec/FFmpeg dep). Deps in
       `dataset/requirements.txt`, kept OUT of app `requirements.txt` (Space never installs them).
       **Gate MET:** `load_from_disk` round trip identical + deterministic regen from seeds (synth
-      + effects), 63 tests green. **`publish()` awaits user HF token** to create the public repo.
-- [ ] **M7 — Static web frontend.** `web/index.html` + `@gradio/client` against the Space API;
-      GitHub Pages-ready. *Gate: static page round trip against the live Space.*
+      + effects), 63 tests green. **PUBLISHED + verified live** at
+      https://huggingface.co/datasets/nakas/stemflipper-dataset — `load_dataset(repo,"synth")`
+      and `load_dataset(repo,"effects")` both round trip from the Hub, published audio matches
+      deterministic local regen (`np.allclose`). Card needed a `configs:` YAML block for the
+      config names to resolve (push_to_hub writes synth/ & effects/ dirs but our overwritten
+      README dropped the mapping) — fixed in `_dataset_card` (commit 8031d63).
+- [x] **M7 — Static web frontend.** DONE + LIVE. `web/index.html`: build-step-free static client
+      loading `@gradio/client@2.3.0` via jsDelivr `+esm` (matches the Space's Gradio 6.19 server /
+      `/gradio_api` prefix); uploads to `/flip`, streams status, offers the DAW-bundle zip + stem
+      previews. Browser-verified (headless Chrome/CDP): ESM import resolves (`Client` is a fn), UI
+      renders, no console errors. Root `index.html` redirects to `/web`; `.nojekyll` present.
+      **Repo pushed PUBLIC:** https://github.com/andrewnakas/stemflipper (52 files; per user choice
+      the whole repo incl. PLAN/HANDOFF/research is public). **Pages LIVE:**
+      https://andrewnakas.github.io/stemflipper/ (source: main branch, root path). *Gate: static
+      page reaches the live Space and renders — verified locally; live Pages round trip confirmed.*
 
 ## INVARIANTS (do not violate)
 
