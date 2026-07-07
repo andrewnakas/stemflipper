@@ -192,6 +192,9 @@ def _dataset_card(repo_id: str, cfg: BuildConfig) -> str:
     import json
 
     meta = cfg.to_card_meta()
+    # The `configs:` block is REQUIRED for load_dataset(repo, "synth"/"effects") to
+    # resolve — push_to_hub(config_name=...) writes data under synth/ & effects/ dirs
+    # but does not add this mapping when we later overwrite README.md ourselves.
     return f"""---
 license: cc-by-4.0
 task_categories:
@@ -203,6 +206,15 @@ tags:
 - parameter-estimation
 - synthetic
 pretty_name: StemFlipper synth/effects parameter-estimation scaffold
+configs:
+- config_name: synth
+  data_files:
+  - split: train
+    path: synth/train-*
+- config_name: effects
+  data_files:
+  - split: train
+    path: effects/train-*
 ---
 
 # StemFlipper — synth & effects parameter-estimation dataset (scaffold)
