@@ -6,7 +6,17 @@ import re
 import shutil
 from pathlib import Path
 
-from . import analyze, audio_io, export, router, sampler, separate, transcribe
+from . import (
+    analyze,
+    audio_io,
+    effects,
+    export,
+    router,
+    sampler,
+    separate,
+    synthfit,
+    transcribe,
+)
 
 
 def run_pipeline(
@@ -18,6 +28,7 @@ def run_pipeline(
     make_zip: bool = True,
     separate_fn=None,
     use_panns: bool = True,
+    use_synth: bool = False,
 ) -> dict:
     """Full flow: analyze -> separate -> route -> transcribe -> sampler -> bundle.
 
@@ -25,6 +36,8 @@ def run_pipeline(
     defaults to separate.separate_stems.
     use_panns toggles the PANNs CNN14 instrument classifier in the router (turn off
     to run fully offline; the router degrades to spectral cues either way).
+    use_synth opts into the syntheon refiner for synth-fit (off by default: the Vital
+    warm-start is authored with no frontier dep; syntheon is a heavy optional install).
     Returns {"bundle_dir", "zip_path", "manifest"}.
     """
 
@@ -60,11 +73,14 @@ def run_pipeline(
 
     tracks: dict[str, dict] = {}
     stems_meta: dict[str, dict] = {}
+    characters: dict[str, router.StemCharacter] = {}
+    stem_audio_cache: dict[str, tuple] = {}  # name -> (audio, sr), reused by M5 stages
     ordered = [s for s in separate.KNOWN_STEMS if s in stem_paths]
     for i, name in enumerate(ordered):
-        report(0.5 + 0.3 * i / len(ordered), f"Analyzing & transcribing {name}")
+        report(0.45 + 0.25 * i / len(ordered), f"Analyzing & transcribing {name}")
         stem_audio, stem_sr = audio_io.load_audio(stem_paths[name], mono=True)
         silent = audio_io.is_silent(stem_audio)
+        stem_audio_cache[name] = (stem_audio, stem_sr)
 
         if silent:
             character = router.route_stem(name, stem_audio, stem_sr, [], use_panns=False)
@@ -81,12 +97,15 @@ def run_pipeline(
             character = router.escalate_polyphony(character, result["notes"], name)
 
         tracks[name] = result
+        characters[name] = character
         stems_meta[name] = {
             "audio": f"stems/{name}.wav",
             "silent": silent,
             "n_notes": len(result["notes"]),
             "midi": f"midi/{name}.mid" if result["notes"] else None,
             "instrument_sfz": None,
+            "instrument_vital": None,
+            "effects": None,
             "strategy": character.strategy,
             "instrument": character.instrument,
             "polyphonic": character.polyphonic,
@@ -103,7 +122,7 @@ def run_pipeline(
                 stems_meta[weak]["low_confidence"] = True
 
     for i, name in enumerate(ordered):
-        report(0.8 + 0.08 * i / len(ordered), f"Building {name} instrument")
+        report(0.7 + 0.06 * i / len(ordered), f"Building {name} instrument")
         built = sampler.build_sampler(
             name,
             stem_paths[name],
@@ -113,6 +132,13 @@ def run_pipeline(
         )
         if built:
             stems_meta[name]["instrument_sfz"] = f"instruments/{name}/{name}.sfz"
+
+    # --- M5: effects + synth-fit (frontier, best-effort) --------------------------
+    # Every stage is wrapped so a failure only flags the stem and never blocks the
+    # bundle (Invariants #4, #7). The sampler path built above is always the fallback.
+    _run_effects_and_synthfit(
+        ordered, characters, stem_audio_cache, stems_meta, bundle_dir, report, use_synth
+    )
 
     report(0.9, "Writing MIDI, manifest, Reaper project")
     export.write_midi(tracks, analysis.tempo, bundle_dir / "midi")
@@ -133,3 +159,65 @@ def run_pipeline(
 
     report(1.0, "Done")
     return {"bundle_dir": bundle_dir, "zip_path": zip_path, "manifest": manifest}
+
+
+def _run_effects_and_synthfit(
+    ordered, characters, stem_audio_cache, stems_meta, bundle_dir, report, use_synth
+) -> None:
+    """M5 stages — mutate stems_meta in place, write effects/*.json + *.vital presets.
+
+    Best-effort: any per-stem failure just leaves that stem on the sampler path. Drums
+    and silent stems are skipped (nothing to EQ-match or synth-fit).
+    """
+    import soundfile as sf
+
+    fx_dir = bundle_dir / "effects"
+    for i, name in enumerate(ordered):
+        report(0.76 + 0.04 * i / max(1, len(ordered)), f"Reconstructing {name} effects")
+        meta = stems_meta[name]
+        if meta["silent"] or name == "drums":
+            continue
+        y, sr = stem_audio_cache.get(name, (None, None))
+        if y is None:
+            continue
+        char = characters[name]
+
+        # --- effects: EQ-match + blind reverb IR for every pitched, non-silent stem ---
+        fx = effects.analyze_effects(y, sr, wet=char.wet)
+        if fx is not None:
+            fx_dir.mkdir(parents=True, exist_ok=True)
+            ir_rel = None
+            if fx.rt60_s > 0.0:
+                ir = effects.synth_ir(fx.rt60_s, sr)
+                ir_path = fx_dir / f"{name}_ir.wav"
+                sf.write(str(ir_path), ir, sr)
+                ir_rel = f"effects/{name}_ir.wav"
+                fx.ir_wav = ir_rel
+            fx_payload = {
+                "eq_curve": [[f, g] for f, g in fx.eq_curve],
+                "rt60_s": fx.rt60_s,
+                "wet": fx.wet,
+                "ir_wav": ir_rel,
+                "scores": fx.scores,
+            }
+            (fx_dir / f"{name}.json").write_text(_json_dumps(fx_payload))
+            meta["effects"] = f"effects/{name}.json"
+
+        # --- synth-fit: only mono + synth-like stems the router selected ---
+        if char.strategy == "synth-fit":
+            fit = synthfit.synth_fit(y, sr, use_syntheon=use_synth)
+            if fit is not None:
+                vital_path = bundle_dir / "instruments" / name / f"{name}.vital"
+                synthfit.write_vital(fit.preset, vital_path)
+                meta["instrument_vital"] = f"instruments/{name}/{name}.vital"
+                meta["synthfit"] = {
+                    "waveform": fit.waveform,
+                    "source": fit.source,
+                    "scores": fit.scores,
+                }
+
+
+def _json_dumps(obj) -> str:
+    import json
+
+    return json.dumps(obj, indent=2)

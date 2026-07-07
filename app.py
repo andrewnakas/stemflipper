@@ -34,13 +34,25 @@ _HEADER = """\
 # 🎛️ StemFlipper
 
 Upload a song → AI separates it into stems → each stem becomes **MIDI + a playable
-sliced-sample instrument (SFZ)** → download a **DAW project bundle** (stems, MIDI,
-instruments, Reaper project, manifest).
+sliced-sample instrument (SFZ)**, plus best-effort **synth presets (Vital)** for
+mono synth lines and **EQ/reverb match** per stem → download a **DAW project bundle**
+(stems, MIDI, instruments, effects, Reaper project, manifest).
 
 *Research/educational demo. Separation runs on CPU on this Space — a 3–4 min song takes
 several minutes; the progress bar keeps moving. Transcription is an editable starting
 point, not a perfect score.*
 """
+
+
+def _rt60_of(bundle, effects_rel):
+    """Read the reverb RT60 from a stem's effects json (0.0/absent if dry). Best-effort."""
+    import json
+
+    try:
+        fx = json.loads((Path(bundle) / effects_rel).read_text())
+        return fx.get("rt60_s") or 0.0
+    except Exception:
+        return 0.0
 
 
 def flip(audio_path, model, progress=gr.Progress()):
@@ -59,25 +71,33 @@ def flip(audio_path, model, progress=gr.Progress()):
         use_panns=USE_PANNS,
     )
     manifest = result["manifest"]
+    bundle = result["bundle_dir"]
 
     lines = [
         f"**tempo** {manifest['tempo']} BPM · **key** {manifest['key']} · "
         f"**duration** {manifest['duration']:.0f}s · model `{manifest['separation_model']}`",
         "",
-        "| stem | instrument | notes | strategy | SFZ |",
-        "|---|---|---|---|---|",
+        "| stem | instrument | notes | strategy | SFZ | Vital | FX |",
+        "|---|---|---|---|---|---|---|",
     ]
     for name, meta in manifest["stems"].items():
         notes = "silent" if meta["silent"] else str(meta["n_notes"])
         sfz = "✓" if meta["instrument_sfz"] else "—"
+        vital = "✓" if meta.get("instrument_vital") else "—"
+        # FX cell: reverb RT60 (if any) from the effects json reference, EQ always present
+        fx = "—"
+        if meta.get("effects"):
+            fx = "EQ"
+            rt60 = _rt60_of(bundle, meta["effects"])
+            if rt60:
+                fx += f" · rev {rt60:.1f}s"
         inst = meta.get("instrument", "—")
         strat = meta.get("strategy", "—")
         if meta.get("low_confidence"):
             strat += " ⚠️"
-        lines.append(f"| {name} | {inst} | {notes} | {strat} | {sfz} |")
+        lines.append(f"| {name} | {inst} | {notes} | {strat} | {sfz} | {vital} | {fx} |")
     summary = "\n".join(lines)
 
-    bundle = result["bundle_dir"]
     previews = [
         str(bundle / "stems" / f"{name}.wav")
         if (bundle / "stems" / f"{name}.wav").exists()

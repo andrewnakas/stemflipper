@@ -47,17 +47,27 @@ stems/          separated audio stems (drag into any DAW)
 midi/           transcribed MIDI — song.mid is the full multitrack (Format 1,
                 tempo map included); per-stem .mid files for single-track import
 instruments/    sliced-sample instruments (.sfz) built from each stem — load in a
-                free SFZ player (sfizz, Sforzando) or convert with DecentSampler
+                free SFZ player (sfizz, Sforzando) or convert with DecentSampler.
+                Mono synth-like stems also get a .vital preset (open in Vital) — a
+                best-effort editable *starting point*, not a bit-exact clone.
+effects/        per-stem effect match (best-effort): <stem>.json holds an EQ curve
+                (freq, gain_dB breakpoints — recreate on any DAW EQ) and, for stems
+                with an audible reverb tail, an <stem>_ir.wav impulse response to load
+                into a convolution reverb.
 project.RPP     Reaper project: opens the stems arranged on tracks at the right
                 tempo. Import midi/*.mid onto tracks, then drop the matching .sfz
                 on an instrument track to make parts editable.
-manifest.json   machine-readable metadata (tempo, key, stem->file mapping)
+manifest.json   machine-readable metadata (tempo, key, stem->file mapping,
+                per-stem strategy/instrument/effects references)
 
 Honest limitations (MVP)
 ------------------------
 - Transcription quality varies by stem; drums use an onset heuristic that misses
   overlapping hits. Treat MIDI as an editable starting point, not a perfect score.
 - Sampler slices inherit any bleed/reverb baked into the separated stems.
+- Synth presets (.vital) and EQ/reverb matches are best-effort reconstructions:
+  subtractive synthesis can't clone every timbre, and reverb/EQ are estimated blind
+  from the stem. They're editable starting points — tweak to taste.
 """
 
 

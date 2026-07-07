@@ -35,6 +35,24 @@
   the bass fixture). **PANNs is OFF on the Space by default** (`STEMFLIPPER_PANNS=1` to enable):
   the 340 MB CNN14 download would stall the first request; router degrades to spectral cues.
   **⚠️ NOT YET REDEPLOYED** — awaiting user go-ahead (redeploy would push M4 + the fix live).
+- **2026-07-07 (Opus, later):** M5 complete. Full fast suite green: **49 tests** (was 31;
+  +18 for effects/synth-fit/pipeline). New: `stemflipper/effects.py` (EQ-match curve +
+  blind reverb IR, numpy/scipy only) and `stemflipper/synthfit.py` (mono+synth stem →
+  Vital `.vital` warm-start preset, JSON, no frontier dep). Pipeline gained an M5 stage
+  (`_run_effects_and_synthfit`) writing `effects/<stem>.json` (+`<stem>_ir.wav` when wet)
+  for every pitched stem and `instruments/<stem>/<stem>.vital` for synth-fit stems; manifest
+  gained `effects`/`instrument_vital`/`synthfit` fields; app summary table gained Vital+FX
+  columns; bundle README documents both. **Gate MET:** fixture lead stem yields a loadable
+  `.vital` (valid JSON preset); a match EQ from a tonally-tilted render toward the target
+  decreases auraloss MultiResolutionSTFT (`test_eq_match_decreases_auraloss`). **Only one new
+  dep: `auraloss` (MIT, pure-torch)** — verified installing clean before touching
+  requirements.txt (Invariant #2). dasp-pytorch/syntheon/pedalboard intentionally NOT
+  required: the EQ curve and .vital are authored with numpy/scipy+JSON so the stage never
+  needs a frontier install and CI stays offline; syntheon is an opt-in refiner (`use_synth=True`).
+  Every M5 entry point is try/except-wrapped → falls back to the sampler path (Invariants #4/#7).
+  RT60 is gated on the router's `wet` flag (a dry-but-sustained tone's Schroeder slope
+  extrapolates to a bogus huge decay). **⚠️ NOT YET REDEPLOYED** — M4 fix + M5 both await the
+  user's redeploy go-ahead. Next: M6 (dataset scaffold).
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
@@ -74,12 +92,17 @@
       panns-inference 0.1.1 + piano-transcription-inference 0.0.6 verified installing clean,
       numpy-2 compatible, before touching requirements.txt.* NOTE: also fixed the Space's
       tflite/numpy-2 transcription crash — see STATUS.
-- [ ] **M5 — Effects + synth-fit (frontier, best-effort, flagged).** EQ match: dasp-pytorch
-      (git, PIN A SHA) `auto_eq` + auraloss MultiResolutionSTFT; reverb: blind IR → convolution;
-      synth-fit (mono+synth stems only): syntheon (PyPI 0.1.0) warm-start → `.vital` preset in
-      bundle, optional CMA-ES refine. ALL wrapped in try/except: any failure flags the stem and
-      falls back to the sampler path — the pipeline must never hard-fail here. *Gate: fixture
-      lead stem yields a loadable .vital; EQ-matched render decreases auraloss vs target.*
+- [x] **M5 — Effects + synth-fit (frontier, best-effort, flagged).** DONE. `stemflipper/effects.py`:
+      EQ match (`match_eq` corrective curve + `fit_eq` tonal curve, numpy/scipy) + blind reverb
+      IR (`estimate_rt60` via release-tail Schroeder slope, gated on router `wet`; `synth_ir`
+      decaying-noise IR). `stemflipper/synthfit.py`: mono+synth stems → Vital `.vital` warm-start
+      preset (JSON authored from measured pitch/brightness/envelope; syntheon opt-in refiner behind
+      `use_synth=True`). Pipeline M5 stage writes `effects/<stem>.json` (+ `_ir.wav` when wet) and
+      `instruments/<stem>/<stem>.vital`; manifest + app table + bundle README updated. ALL stages
+      try/except → sampler-path fallback (never hard-fails). **Gate MET:** fixture lead yields a
+      loadable .vital; match-EQ render decreases auraloss vs target (49 tests green). Decided
+      AGAINST hard-requiring dasp-pytorch/syntheon/pedalboard — only `auraloss` (MIT) added,
+      verified clean (Invariant #2); the rest are numpy/scipy+JSON so CI stays offline.
 - [ ] **M6 — Dataset scaffold.** `dataset/`: torchsynth (audio, params) generator + dasp wet/param
       effect pairs; publish generator + seeds (NOT terabytes of audio) as an HF `datasets` repo
       (needs user token). *Gate: `datasets.load_dataset` round trip; deterministic regeneration

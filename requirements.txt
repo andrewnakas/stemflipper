@@ -16,3 +16,9 @@ spaces
 # M4 — router + analysis upgrades (verified to install cleanly, numpy-2 compatible)
 panns-inference>=0.1.1        # PANNs CNN14 instrument classifier (MIT)
 piano-transcription-inference>=0.0.6  # ByteDance piano transcription (MIT)
+# M5 — effects + synth-fit (best-effort; EQ/reverb/Vital use numpy+scipy already present).
+# auraloss (MIT, pure-torch) is the only new dep: multi-res STFT loss for the EQ-match gate.
+# dasp-pytorch/syntheon/pedalboard are intentionally NOT required — the EQ-match curve and
+# the .vital warm-start are authored with numpy/scipy + JSON so the stage never needs a
+# frontier install; syntheon is an opt-in refiner behind use_synth=True.
+auraloss>=0.4
