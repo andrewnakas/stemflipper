@@ -63,6 +63,10 @@
     .stems { margin-top: 14px; display: grid; gap: 10px; }
     .stem { background: var(--panel2); border-radius: 10px; padding: 10px 12px; }
     .stem span { font-size: 13px; color: var(--muted); }
+    .stemhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .playbtn { background: var(--panel); color: var(--accent); border: 1px solid var(--line);
+      border-radius: 7px; padding: 4px 10px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+    .playbtn:hover { border-color: var(--accent); }
     audio { width: 100%; margin-top: 6px; }
     canvas.roll { width: 100%; margin-top: 8px; border-radius: 8px; display: block; }
     footer { color: var(--muted); font-size: 12px; margin-top: 28px; text-align: center; }
@@ -296,6 +300,7 @@
         els.summary.innerHTML = renderSummary(summaryMd);
 
         els.stems.innerHTML = "";
+        stopPlayback();  // stop any prior stem still playing
         previews.forEach((p, i) => {
           const name = PREVIEW_NAMES[i] || "stem " + (i + 1);
           const url = fileUrl(p);
@@ -303,14 +308,25 @@
           box.className = "stem";
           const stemNotes = notes.stems[name];
           const count = stemNotes ? stemNotes.notes.length : 0;
-          box.innerHTML = `<span>${name}${count ? ` · ${count} notes` : ""}</span>`;
+
+          const head = document.createElement("div");
+          head.className = "stemhead";
+          head.innerHTML = `<span>${name}${count ? ` · ${count} notes` : ""}</span>`;
+          box.appendChild(head);
+
           if (url) {
             const a = document.createElement("audio");
             a.controls = true; a.src = url;
             box.appendChild(a);
           }
           if (stemNotes && count) {
-            box.appendChild(makePianoRoll(stemNotes, notes.duration));
+            const roll = makePianoRoll(stemNotes, notes.duration);
+            const play = document.createElement("button");
+            play.className = "playbtn";
+            play.textContent = "▶ Play notes";
+            play.onclick = () => togglePlay(name, stemNotes, notes.duration, roll, play);
+            head.appendChild(play);
+            box.appendChild(roll.canvas);
           }
           els.stems.appendChild(box);
         });
@@ -344,15 +360,15 @@
     // General-MIDI percussion names for the common drum pitches we emit (36/38/42).
     const GM_DRUMS = { 35: "Kick", 36: "Kick", 38: "Snare", 40: "Snare", 42: "Hat", 46: "Hat", 49: "Crash", 51: "Ride" };
 
-    // Draw a DAW-style piano-roll of a stem's notes onto a <canvas>.
+    // Build a DAW-style piano-roll for a stem's notes. Returns { canvas, render, dur }
+    // where render(playT) redraws the roll and, if playT != null, a playhead + lit notes.
     // stem = { is_drum, notes: [[pitch,start,end,vel],...] }; duration bounds the X axis.
     function makePianoRoll(stem, duration) {
       const notes = stem.notes;
       const W = 640, H = stem.is_drum ? 110 : 150, PAD_L = 34, PAD_B = 14;
       const canvas = document.createElement("canvas");
       canvas.className = "roll";
-      // Render at 2× for crisp lines on HiDPI, display at CSS width 100%.
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);   // crisp on HiDPI
       canvas.width = W * dpr; canvas.height = H * dpr;
       canvas.style.width = "100%"; canvas.style.height = "auto";
       const ctx = canvas.getContext("2d");
@@ -366,39 +382,120 @@
       const plotW = W - PAD_L - 4, plotH = H - PAD_B - 4;
       const x = (t) => PAD_L + (t / dur) * plotW;
       const y = (p) => 4 + (1 - (p - loP) / (hiP - loP)) * plotH;
-
-      ctx.fillStyle = "#12151c"; ctx.fillRect(0, 0, W, H);
-      // horizontal pitch gridlines (octaves for pitched; each drum lane for drums)
-      ctx.strokeStyle = "#232936"; ctx.fillStyle = "#5a6272";
-      ctx.font = "9px -apple-system, sans-serif"; ctx.textBaseline = "middle";
-      if (stem.is_drum) {
-        const seen = [...new Set(notes.map((n) => n[0]))].sort((a, b) => b - a);
-        for (const p of seen) {
-          const yy = y(p);
-          ctx.beginPath(); ctx.moveTo(PAD_L, yy); ctx.lineTo(W - 4, yy); ctx.stroke();
-          ctx.fillText(GM_DRUMS[p] || String(p), 2, yy);
-        }
-      } else {
-        for (let p = Math.ceil(loP / 12) * 12; p <= hiP; p += 12) {
-          const yy = y(p);
-          ctx.beginPath(); ctx.moveTo(PAD_L, yy); ctx.lineTo(W - 4, yy); ctx.stroke();
-          ctx.fillText("C" + (p / 12 - 1), 2, yy);  // MIDI 12→C0
-        }
-      }
-      // beat-ish vertical gridlines (~1s marks)
-      for (let t = 0; t <= dur; t += Math.max(1, Math.round(dur / 8))) {
-        ctx.beginPath(); ctx.moveTo(x(t), 4); ctx.lineTo(x(t), H - PAD_B); ctx.stroke();
-        ctx.fillText(t + "s", x(t) + 2, H - PAD_B / 2);
-      }
-      // notes: rects colored by velocity
       const noteH = stem.is_drum ? 4 : Math.max(2, plotH / (hiP - loP) - 1);
-      for (const [p, s, e, v] of notes) {
-        const vv = Math.max(0, Math.min(1, v / 127));
-        ctx.fillStyle = `hsl(${180 + vv * 60}, 70%, ${45 + vv * 20}%)`;
-        const nx = x(s), nw = Math.max(2, x(e) - x(s));
-        ctx.fillRect(nx, y(p) - noteH / 2, nw, noteH);
+
+      function render(playT) {
+        ctx.fillStyle = "#12151c"; ctx.fillRect(0, 0, W, H);
+        ctx.strokeStyle = "#232936"; ctx.fillStyle = "#5a6272";
+        ctx.font = "9px -apple-system, sans-serif"; ctx.textBaseline = "middle";
+        if (stem.is_drum) {
+          const seen = [...new Set(notes.map((n) => n[0]))].sort((a, b) => b - a);
+          for (const p of seen) {
+            const yy = y(p);
+            ctx.beginPath(); ctx.moveTo(PAD_L, yy); ctx.lineTo(W - 4, yy); ctx.stroke();
+            ctx.fillText(GM_DRUMS[p] || String(p), 2, yy);
+          }
+        } else {
+          for (let p = Math.ceil(loP / 12) * 12; p <= hiP; p += 12) {
+            const yy = y(p);
+            ctx.beginPath(); ctx.moveTo(PAD_L, yy); ctx.lineTo(W - 4, yy); ctx.stroke();
+            ctx.fillText("C" + (p / 12 - 1), 2, yy);  // MIDI 12→C0
+          }
+        }
+        for (let t = 0; t <= dur; t += Math.max(1, Math.round(dur / 8))) {
+          ctx.beginPath(); ctx.moveTo(x(t), 4); ctx.lineTo(x(t), H - PAD_B); ctx.stroke();
+          ctx.fillText(t + "s", x(t) + 2, H - PAD_B / 2);
+        }
+        // notes: rects colored by velocity; the currently-sounding note glows white
+        for (const [p, s, e, v] of notes) {
+          const vv = Math.max(0, Math.min(1, v / 127));
+          const lit = playT != null && playT >= s && playT < e;
+          ctx.fillStyle = lit ? "#ffffff" : `hsl(${180 + vv * 60}, 70%, ${45 + vv * 20}%)`;
+          const nx = x(s), nw = Math.max(2, x(e) - x(s));
+          ctx.fillRect(nx, y(p) - noteH / 2, nw, noteH);
+        }
+        if (playT != null) {                          // playhead
+          ctx.strokeStyle = "#ffb454"; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.moveTo(x(playT), 2); ctx.lineTo(x(playT), H - 2); ctx.stroke();
+          ctx.lineWidth = 1;
+        }
       }
-      return canvas;
+      render(null);
+      return { canvas, render, dur };
+    }
+
+    // --- WebAudio playback of a stem's notes ----------------------------------
+    let audioCtx = null;
+    let playing = null;   // { name, stop() } of the stem currently playing
+
+    function stopPlayback() {
+      if (playing) { playing.stop(); playing = null; }
+    }
+
+    function togglePlay(name, stem, duration, roll, btn) {
+      if (playing && playing.name === name) { stopPlayback(); return; }
+      stopPlayback();
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+
+      const t0 = audioCtx.currentTime + 0.05;
+      const master = audioCtx.createGain();
+      master.gain.value = 0.25;
+      master.connect(audioCtx.destination);
+      const sources = [];
+
+      for (const [pitch, start, end, vel] of stem.notes) {
+        const gain = audioCtx.createGain();
+        const amp = Math.max(0.05, Math.min(1, vel / 127));
+        const on = t0 + start, off = t0 + Math.max(start + 0.03, end);
+        if (stem.is_drum) {
+          // short filtered noise burst — pitch picks the timbre band
+          const buf = audioCtx.createBuffer(1, 2048, audioCtx.sampleRate);
+          const d = buf.getChannelData(0);
+          for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+          const src = audioCtx.createBufferSource(); src.buffer = buf;
+          const bp = audioCtx.createBiquadFilter();
+          bp.type = "bandpass";
+          bp.frequency.value = pitch <= 38 ? 120 : pitch >= 42 ? 8000 : 2000;  // kick/hat/snare
+          gain.gain.setValueAtTime(amp, on);
+          gain.gain.exponentialRampToValueAtTime(0.001, on + 0.18);
+          src.connect(bp); bp.connect(gain); gain.connect(master);
+          src.start(on); src.stop(on + 0.2);
+          sources.push(src);
+        } else {
+          const osc = audioCtx.createOscillator();
+          osc.type = "sawtooth";
+          osc.frequency.value = 440 * Math.pow(2, (pitch - 69) / 12);
+          gain.gain.setValueAtTime(0, on);
+          gain.gain.linearRampToValueAtTime(amp, on + 0.01);
+          gain.gain.setValueAtTime(amp, Math.max(on + 0.02, off - 0.03));
+          gain.gain.linearRampToValueAtTime(0, off);
+          osc.connect(gain); gain.connect(master);
+          osc.start(on); osc.stop(off + 0.02);
+          sources.push(osc);
+        }
+      }
+
+      btn.textContent = "■ Stop";
+      let raf;
+      const tick = () => {
+        const t = audioCtx.currentTime - t0;
+        if (t >= duration) { stopPlayback(); return; }
+        roll.render(t);
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+
+      playing = {
+        name,
+        stop() {
+          cancelAnimationFrame(raf);
+          for (const s of sources) { try { s.stop(); } catch (_) {} }
+          try { master.disconnect(); } catch (_) {}
+          roll.render(null);
+          btn.textContent = "▶ Play notes";
+        },
+      };
     }
   </script>
 </body>
