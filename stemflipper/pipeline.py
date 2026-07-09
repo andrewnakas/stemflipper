@@ -140,20 +140,29 @@ def run_pipeline(
         ordered, characters, stem_audio_cache, stems_meta, bundle_dir, report, use_synth
     )
 
-    report(0.9, "Writing MIDI, manifest, Reaper project")
+    report(0.9, "Writing MIDI, manifest, DAW projects")
     export.write_midi(tracks, analysis.tempo, bundle_dir / "midi")
     export.write_notes(tracks, analysis.duration, bundle_dir)
     for name, meta in stems_meta.items():
         meta["notes"] = "notes.json" if tracks.get(name, {}).get("notes") else None
+
+    stem_audio_map = {n: m["audio"] for n, m in stems_meta.items()}
+    export.write_rpp(bundle_dir, analysis.tempo, stem_audio_map, analysis.duration)
+    # DAWproject: one editable project with audio + embedded MIDI per stem (best-effort).
+    dawproject = None
+    try:
+        export.write_dawproject(
+            tracks, stem_audio_map, analysis.tempo, analysis.time_signature,
+            analysis.duration, bundle_dir,
+        )
+        dawproject = "project.dawproject"
+    except Exception:
+        pass  # RPP is always the fallback; never block the bundle (Invariants #4/#7)
+
     manifest = export.make_manifest_meta(input_path.name, analysis, model, stems_meta)
+    manifest["dawproject"] = dawproject
     export.write_manifest(bundle_dir, manifest)
     export.write_readme(bundle_dir, input_path.name, analysis)
-    export.write_rpp(
-        bundle_dir,
-        analysis.tempo,
-        {n: m["audio"] for n, m in stems_meta.items()},
-        analysis.duration,
-    )
 
     zip_path = None
     if make_zip:
