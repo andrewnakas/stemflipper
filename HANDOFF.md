@@ -121,6 +121,14 @@
   +2 export). Verified integration: real run emits 4 stem tracks + 119 embedded notes + bundled audio.
   Phase-2 items still open: train synth/effect estimators (heavy GPU); ADT drums (blocked — all good
   models are NC-licensed); Ableton `.als` export; WASM/in-browser (deferred, large).
+- **2026-07-09 (Opus, playable piano-roll):** Made the web piano-roll INTERACTIVE — each stem gets a
+  ▶ Play button that sonifies its notes via WebAudio (sawtooth osc MIDI→freq for pitched; bandpassed
+  noise bursts for drums by pitch) with an animated orange playhead (rAF synced to
+  AudioContext.currentTime) and the sounding note lit white; one stem at a time, toggle Play/Stop.
+  Pure client-side (`web/index.html` only — note data already reaches the page). `makePianoRoll` now
+  returns `{canvas, render, dur}`. Browser-verified: Play → "■ Stop" + rAF ~61fps + playhead animates
+  + zero console errors; Stop resets. NEXT loop candidates (user picks): Ableton `.als` (risky —
+  proprietary), inline-RPP-MIDI (risky — needs Reaper to validate), or web polish/hardening.
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
