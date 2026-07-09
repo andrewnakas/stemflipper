@@ -99,6 +99,18 @@
   empty result. Verified live: full upload→join→SSE→progress flow, no session_not_found, errors
   surface instead of hanging. Both redeployed/pushed. **LESSON: always verify Space transcription
   with a per-instrument breakdown, never a merged total.** See [[space-tflite-numpy2-trap]].
+- **2026-07-09 (Opus, piano-roll feature):** Added a per-stem **piano-roll of detected notes** to
+  the web UI (user request: "make the individual stems represent the detected notes on a MIDI/NLE
+  sequence"). `export.write_notes()` writes `notes.json` (per stem `{is_drum, notes:[[pitch,start,
+  end,vel]]}`, empty stems omitted); pipeline calls it + records a manifest `notes` ref; `app.py`
+  `flip()` appends the notes JSON as the LAST output (`gr.JSON(visible=False)` so existing preview
+  indices stay stable); `web/index.html` `makePianoRoll()` draws each stem's notes on a HiDPI canvas
+  (pitch Y w/ octave labels, Kick/Snare/Hat lanes for drums, velocity-colored rects). Also fixed the
+  stem-preview LABELS (were mislabeled — now match `PREVIEW_STEMS` vocals/drums/bass/other).
+  Screenshot-verified with real fixture notes (bass 24, other 32, drums 63). Fast suite 63 green.
+  **⚠️ HF POLICY CHANGE:** creating a Gradio Space on free cpu-basic now returns **402 Payment
+  Required** (PRO required). `deploy_space.py` broke at `create_repo`; fixed to catch the 402 and
+  upload to the existing Space directly (`upload_folder` alone works — the Space is grandfathered).
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
