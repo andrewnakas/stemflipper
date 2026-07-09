@@ -26,9 +26,18 @@ def main():
     me = api.whoami()["name"]
     space_id = args.space_id or f"{me}/stemflipper"
 
-    api.create_repo(
-        repo_id=space_id, repo_type="space", space_sdk="gradio", exist_ok=True
-    )
+    # HF now requires PRO to CREATE a Gradio Space on free cpu-basic (create_repo
+    # returns 402). The Space already exists, so only create it if missing and treat a
+    # 402 as "it exists / can't create on this plan" and proceed straight to upload.
+    try:
+        api.create_repo(
+            repo_id=space_id, repo_type="space", space_sdk="gradio", exist_ok=True
+        )
+    except Exception as e:
+        if "402" not in str(e):
+            raise
+        print("note: create_repo blocked (402 / PRO required) — Space must already "
+              "exist; uploading to it directly.")
     api.upload_folder(
         repo_id=space_id,
         repo_type="space",
