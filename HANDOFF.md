@@ -111,6 +111,16 @@
   **⚠️ HF POLICY CHANGE:** creating a Gradio Space on free cpu-basic now returns **402 Payment
   Required** (PRO required). `deploy_space.py` broke at `create_repo`; fixed to catch the 402 and
   upload to the existing Space directly (`upload_folder` alone works — the Space is grandfathered).
+- **2026-07-09 (Opus, Phase-2 DAWproject):** Added `export.write_dawproject()` — each stem →
+  one track in a `project.dawproject` (open DAW-interchange format: Bitwig 5+/Studio One 6.5+/
+  Cubase 14+) carrying BOTH its audio clip AND the transcribed MIDI notes inline; stem audio is
+  bundled inside the .dawproject zip. XML authored directly (stdlib zipfile + templates) — NO
+  dawproject-py dep (git-only, not on PyPI; same offline-CI call as M5). Seconds→beats via tempo,
+  drums on GM ch9, velocity 0..1. Pipeline calls it best-effort (RPP is the always-present
+  fallback); manifest gains a `dawproject` ref; README documents it. 65 fast tests green (was 63;
+  +2 export). Verified integration: real run emits 4 stem tracks + 119 embedded notes + bundled audio.
+  Phase-2 items still open: train synth/effect estimators (heavy GPU); ADT drums (blocked — all good
+  models are NC-licensed); Ableton `.als` export; WASM/in-browser (deferred, large).
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
