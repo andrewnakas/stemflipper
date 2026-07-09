@@ -5,6 +5,7 @@ separation stage is GPU-relevant, so it alone is wrapped with @spaces.GPU
 (a no-op everywhere else).
 """
 
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -104,7 +105,13 @@ def flip(audio_path, model, progress=gr.Progress()):
         else None
         for name in PREVIEW_STEMS
     ]
-    return str(result["zip_path"]), summary, *previews
+
+    # Per-stem detected notes for the client piano-roll (appended LAST so the preview
+    # output indices above stay stable for existing API callers).
+    notes_path = bundle / "notes.json"
+    notes = json.loads(notes_path.read_text()) if notes_path.exists() else {"stems": {}}
+
+    return str(result["zip_path"]), summary, *previews, notes
 
 
 with gr.Blocks(title="StemFlipper") as demo:
@@ -125,10 +132,13 @@ with gr.Blocks(title="StemFlipper") as demo:
         preview_outs = [
             gr.Audio(label=name, interactive=False) for name in PREVIEW_STEMS
         ]
+    # Per-stem detected notes → the static web frontend draws piano-rolls from this.
+    # Hidden in the Gradio UI itself (visible=False) but present in the API output.
+    notes_out = gr.JSON(visible=False)
     go_btn.click(
         flip,
         inputs=[audio_in, model_in],
-        outputs=[zip_out, summary_out, *preview_outs],
+        outputs=[zip_out, summary_out, *preview_outs, notes_out],
         api_name="flip",
     )
 

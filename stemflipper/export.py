@@ -135,6 +135,33 @@ def write_rpp(
     return path
 
 
+def write_notes(tracks: dict, duration: float, bundle_dir: str | Path) -> Path:
+    """Per-stem detected notes → notes.json, for UI piano-rolls (and the download).
+
+    tracks: {stem_name: {"notes": [{pitch,start,end,velocity}], "is_drum": bool}}.
+    Each stem's notes are stored as compact ``[pitch, start, end, velocity]`` rows
+    (ints/rounded floats) so the file stays small and a client can draw them without
+    parsing MIDI. ``duration`` bounds the time axis. Stems with no notes are omitted.
+    """
+    stems = {}
+    for name, data in tracks.items():
+        notes = data.get("notes") or []
+        if not notes:
+            continue
+        stems[name] = {
+            "is_drum": bool(data.get("is_drum")),
+            "notes": [
+                [int(n["pitch"]), round(float(n["start"]), 4),
+                 round(float(n["end"]), 4), int(n.get("velocity", 100))]
+                for n in notes
+            ],
+        }
+    payload = {"duration": round(float(duration), 3), "stems": stems}
+    path = Path(bundle_dir) / "notes.json"
+    path.write_text(json.dumps(payload))
+    return path
+
+
 def write_manifest(bundle_dir: str | Path, meta: dict) -> Path:
     path = Path(bundle_dir) / "manifest.json"
     path.write_text(json.dumps(meta, indent=2))

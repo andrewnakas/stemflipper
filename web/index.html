@@ -64,6 +64,7 @@
     .stem { background: var(--panel2); border-radius: 10px; padding: 10px 12px; }
     .stem span { font-size: 13px; color: var(--muted); }
     audio { width: 100%; margin-top: 6px; }
+    canvas.roll { width: 100%; margin-top: 8px; border-radius: 8px; display: block; }
     footer { color: var(--muted); font-size: 12px; margin-top: 28px; text-align: center; }
     footer a { color: var(--accent2); }
     code { background: var(--panel2); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
@@ -275,10 +276,14 @@
         const data = await runFlip(fileRef, els.model.value, setStatus);
         if (!data || !data.length) throw new Error("the Space returned no result (it may have errored mid-job)");
 
-        // data = [zip File, summary markdown, ...stem audio previews]
+        // data = [zip, summary_md, vocals, drums, bass, other, notesJSON]
+        // (preview order matches PREVIEW_STEMS in app.py; notes is appended last).
         const zip = data[0];
         const summaryMd = data[1] || "";
-        const previews = data.slice(2);
+        const PREVIEW_NAMES = ["vocals", "drums", "bass", "other"];
+        const previews = data.slice(2, 2 + PREVIEW_NAMES.length);
+        const notes = (data[data.length - 1] && data[data.length - 1].stems)
+          ? data[data.length - 1] : { duration: 0, stems: {} };
 
         const zipUrl = fileUrl(zip);
         if (zipUrl) {
@@ -291,16 +296,22 @@
         els.summary.innerHTML = renderSummary(summaryMd);
 
         els.stems.innerHTML = "";
-        const names = ["drums", "bass", "vocals", "other", "guitar", "piano"];
         previews.forEach((p, i) => {
+          const name = PREVIEW_NAMES[i] || "stem " + (i + 1);
           const url = fileUrl(p);
-          if (!url) return;
           const box = document.createElement("div");
           box.className = "stem";
-          box.innerHTML = `<span>${names[i] || "stem " + (i + 1)}</span>`;
-          const a = document.createElement("audio");
-          a.controls = true; a.src = url;
-          box.appendChild(a);
+          const stemNotes = notes.stems[name];
+          const count = stemNotes ? stemNotes.notes.length : 0;
+          box.innerHTML = `<span>${name}${count ? ` · ${count} notes` : ""}</span>`;
+          if (url) {
+            const a = document.createElement("audio");
+            a.controls = true; a.src = url;
+            box.appendChild(a);
+          }
+          if (stemNotes && count) {
+            box.appendChild(makePianoRoll(stemNotes, notes.duration));
+          }
           els.stems.appendChild(box);
         });
 
@@ -328,6 +339,66 @@
         html += "<tr>" + cells.map((c) => `<${tag}>${c}</${tag}>`).join("") + "</tr>";
       });
       return html + "</table>";
+    }
+
+    // General-MIDI percussion names for the common drum pitches we emit (36/38/42).
+    const GM_DRUMS = { 35: "Kick", 36: "Kick", 38: "Snare", 40: "Snare", 42: "Hat", 46: "Hat", 49: "Crash", 51: "Ride" };
+
+    // Draw a DAW-style piano-roll of a stem's notes onto a <canvas>.
+    // stem = { is_drum, notes: [[pitch,start,end,vel],...] }; duration bounds the X axis.
+    function makePianoRoll(stem, duration) {
+      const notes = stem.notes;
+      const W = 640, H = stem.is_drum ? 110 : 150, PAD_L = 34, PAD_B = 14;
+      const canvas = document.createElement("canvas");
+      canvas.className = "roll";
+      // Render at 2× for crisp lines on HiDPI, display at CSS width 100%.
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = W * dpr; canvas.height = H * dpr;
+      canvas.style.width = "100%"; canvas.style.height = "auto";
+      const ctx = canvas.getContext("2d");
+      ctx.scale(dpr, dpr);
+
+      const dur = duration || Math.max(...notes.map((n) => n[2]), 1);
+      let loP = Infinity, hiP = -Infinity;
+      for (const n of notes) { loP = Math.min(loP, n[0]); hiP = Math.max(hiP, n[0]); }
+      if (loP === hiP) { loP -= 2; hiP += 2; }        // avoid a zero-height range
+      loP -= 1; hiP += 1;
+      const plotW = W - PAD_L - 4, plotH = H - PAD_B - 4;
+      const x = (t) => PAD_L + (t / dur) * plotW;
+      const y = (p) => 4 + (1 - (p - loP) / (hiP - loP)) * plotH;
+
+      ctx.fillStyle = "#12151c"; ctx.fillRect(0, 0, W, H);
+      // horizontal pitch gridlines (octaves for pitched; each drum lane for drums)
+      ctx.strokeStyle = "#232936"; ctx.fillStyle = "#5a6272";
+      ctx.font = "9px -apple-system, sans-serif"; ctx.textBaseline = "middle";
+      if (stem.is_drum) {
+        const seen = [...new Set(notes.map((n) => n[0]))].sort((a, b) => b - a);
+        for (const p of seen) {
+          const yy = y(p);
+          ctx.beginPath(); ctx.moveTo(PAD_L, yy); ctx.lineTo(W - 4, yy); ctx.stroke();
+          ctx.fillText(GM_DRUMS[p] || String(p), 2, yy);
+        }
+      } else {
+        for (let p = Math.ceil(loP / 12) * 12; p <= hiP; p += 12) {
+          const yy = y(p);
+          ctx.beginPath(); ctx.moveTo(PAD_L, yy); ctx.lineTo(W - 4, yy); ctx.stroke();
+          ctx.fillText("C" + (p / 12 - 1), 2, yy);  // MIDI 12→C0
+        }
+      }
+      // beat-ish vertical gridlines (~1s marks)
+      for (let t = 0; t <= dur; t += Math.max(1, Math.round(dur / 8))) {
+        ctx.beginPath(); ctx.moveTo(x(t), 4); ctx.lineTo(x(t), H - PAD_B); ctx.stroke();
+        ctx.fillText(t + "s", x(t) + 2, H - PAD_B / 2);
+      }
+      // notes: rects colored by velocity
+      const noteH = stem.is_drum ? 4 : Math.max(2, plotH / (hiP - loP) - 1);
+      for (const [p, s, e, v] of notes) {
+        const vv = Math.max(0, Math.min(1, v / 127));
+        ctx.fillStyle = `hsl(${180 + vv * 60}, 70%, ${45 + vv * 20}%)`;
+        const nx = x(s), nw = Math.max(2, x(e) - x(s));
+        ctx.fillRect(nx, y(p) - noteH / 2, nw, noteH);
+      }
+      return canvas;
     }
   </script>
 </body>

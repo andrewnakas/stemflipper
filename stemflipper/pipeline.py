@@ -142,6 +142,9 @@ def run_pipeline(
 
     report(0.9, "Writing MIDI, manifest, Reaper project")
     export.write_midi(tracks, analysis.tempo, bundle_dir / "midi")
+    export.write_notes(tracks, analysis.duration, bundle_dir)
+    for name, meta in stems_meta.items():
+        meta["notes"] = "notes.json" if tracks.get(name, {}).get("notes") else None
     manifest = export.make_manifest_meta(input_path.name, analysis, model, stems_meta)
     export.write_manifest(bundle_dir, manifest)
     export.write_readme(bundle_dir, input_path.name, analysis)

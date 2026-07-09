@@ -34,6 +34,14 @@ def test_app_roundtrip(app_module, fixture_song, monkeypatch):
             names = zf.namelist()
             assert any(n.endswith("manifest.json") for n in names)
             assert any(n.endswith(".sfz") for n in names)
+            assert any(n.endswith("notes.json") for n in names)
         assert "tempo" in summary
+        # last output = per-stem notes for the web piano-roll
+        notes = result[-1]
+        assert isinstance(notes, dict) and "stems" in notes
+        for stem in notes["stems"].values():
+            for row in stem["notes"]:
+                assert len(row) == 4  # [pitch, start, end, velocity]
+                break
     finally:
         app_module.demo.close()
