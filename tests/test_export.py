@@ -73,6 +73,19 @@ def test_write_notes(tmp_path):
     assert payload["stems"]["drums"]["is_drum"] is True
     row = payload["stems"]["bass"]["notes"][0]
     assert row == [33, 0.0, 0.5, 100]  # [pitch, start, end, velocity]
+    # tempo/beats optional -> absent when not supplied
+    assert "tempo" not in payload and "beats" not in payload
+
+
+def test_write_notes_with_grid(tmp_path):
+    beats = [0.0, 0.5, 1.0, 1.5, 2.0]
+    path = export.write_notes(
+        _tracks(), 16.0, tmp_path, tempo=120.0, beat_times=beats, time_signature="3/4"
+    )
+    payload = json.loads(path.read_text())
+    assert payload["tempo"] == 120.0
+    assert payload["beats"] == beats  # rounded seconds, preserved
+    assert payload["time_signature"] == "3/4"
 
 
 def test_dawproject_structure(tmp_path):

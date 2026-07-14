@@ -140,13 +140,24 @@ def write_rpp(
     return path
 
 
-def write_notes(tracks: dict, duration: float, bundle_dir: str | Path) -> Path:
+def write_notes(
+    tracks: dict,
+    duration: float,
+    bundle_dir: str | Path,
+    tempo: float | None = None,
+    beat_times: list | None = None,
+    time_signature: str = "4/4",
+) -> Path:
     """Per-stem detected notes → notes.json, for UI piano-rolls (and the download).
 
     tracks: {stem_name: {"notes": [{pitch,start,end,velocity}], "is_drum": bool}}.
     Each stem's notes are stored as compact ``[pitch, start, end, velocity]`` rows
     (ints/rounded floats) so the file stays small and a client can draw them without
     parsing MIDI. ``duration`` bounds the time axis. Stems with no notes are omitted.
+
+    ``tempo``/``beat_times``/``time_signature`` (optional) let the client draw a real
+    bar/beat grid instead of arbitrary divisions — the roll reads like a DAW timeline.
+    ``beat_times`` is stored as rounded seconds; a large grid is downsampled to beats.
     """
     stems = {}
     for name, data in tracks.items():
@@ -162,6 +173,11 @@ def write_notes(tracks: dict, duration: float, bundle_dir: str | Path) -> Path:
             ],
         }
     payload = {"duration": round(float(duration), 3), "stems": stems}
+    if tempo:
+        payload["tempo"] = round(float(tempo), 2)
+    if beat_times:
+        payload["beats"] = [round(float(b), 4) for b in beat_times]
+    payload["time_signature"] = time_signature
     path = Path(bundle_dir) / "notes.json"
     path.write_text(json.dumps(payload))
     return path

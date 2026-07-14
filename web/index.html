@@ -351,6 +351,12 @@
         const notes = (data[data.length - 1] && data[data.length - 1].stems)
           ? data[data.length - 1] : { duration: 0, stems: {} };
 
+        // A real bar/beat grid for the rolls, if the Space sent tempo/beat data.
+        // beatsPerBar from the time signature's numerator (default 4).
+        const beatsPerBar = parseInt((notes.time_signature || "4/4").split("/")[0], 10) || 4;
+        const rollGrid = (notes.beats && notes.beats.length > 1)
+          ? { beats: notes.beats, beatsPerBar } : null;
+
         const zipUrl = fileUrl(zip);
         if (zipUrl) {
           els.download.href = zipUrl;
@@ -390,7 +396,7 @@
           if (stemNotes && count) {
             // Dragging a roll scrubs the whole song (all rolls move in sync).
             const roll = makePianoRoll(stemNotes, notes.duration,
-              (t, phase) => transport.seek(t, phase));
+              (t, phase) => transport.seek(t, phase), rollGrid);
             box.appendChild(roll.canvas);
             // Solo this stem's notes (mutes the others while it plays).
             const solo = document.createElement("button");
@@ -449,7 +455,8 @@
     // Returns { canvas, render, dur, timeAtX } — render(playT) redraws the roll and,
     // if playT != null, a playhead + lit notes; timeAtX(clientX) maps a pointer X to a
     // time in seconds (for scrubbing). stem = { is_drum, notes: [[pitch,start,end,vel],...] }.
-    function makePianoRoll(stem, duration, onScrub) {
+    // grid = { beats:[t...], beatsPerBar } (optional) → draws a real bar/beat timeline.
+    function makePianoRoll(stem, duration, onScrub, grid) {
       const notes = stem.notes;
       const W = 640, H = stem.is_drum ? 110 : 150, PAD_L = 34, PAD_B = 14;
       const canvas = document.createElement("canvas");
@@ -497,9 +504,22 @@
             ctx.fillText("C" + (p / 12 - 1), 2, yy);  // MIDI 12→C0
           }
         }
-        for (let t = 0; t <= dur; t += Math.max(1, Math.round(dur / 8))) {
-          ctx.beginPath(); ctx.moveTo(x(t), 4); ctx.lineTo(x(t), H - PAD_B); ctx.stroke();
-          ctx.fillText(t + "s", x(t) + 2, H - PAD_B / 2);
+        if (grid && grid.beats && grid.beats.length > 1) {
+          // Real bar/beat timeline: faint beat lines, brighter bar lines with bar #.
+          const bpb = grid.beatsPerBar || 4;
+          grid.beats.forEach((t, i) => {
+            if (t > dur) return;
+            const isBar = i % bpb === 0;
+            ctx.strokeStyle = isBar ? "#3a4252" : "#20242e";
+            ctx.beginPath(); ctx.moveTo(x(t), 4); ctx.lineTo(x(t), H - PAD_B); ctx.stroke();
+            if (isBar) { ctx.fillStyle = "#5a6272"; ctx.fillText(String(i / bpb + 1), x(t) + 2, H - PAD_B / 2); }
+          });
+          ctx.strokeStyle = "#232936";
+        } else {
+          for (let t = 0; t <= dur; t += Math.max(1, Math.round(dur / 8))) {
+            ctx.beginPath(); ctx.moveTo(x(t), 4); ctx.lineTo(x(t), H - PAD_B); ctx.stroke();
+            ctx.fillText(t + "s", x(t) + 2, H - PAD_B / 2);
+          }
         }
         // notes: rects colored by velocity; the currently-sounding note glows white
         for (const [p, s, e, v] of notes) {

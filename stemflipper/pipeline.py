@@ -160,7 +160,11 @@ def run_pipeline(
 
     report(0.9, "Writing MIDI, manifest, DAW projects")
     export.write_midi(tracks, analysis.tempo, bundle_dir / "midi")
-    export.write_notes(tracks, analysis.duration, bundle_dir)
+    export.write_notes(
+        tracks, analysis.duration, bundle_dir,
+        tempo=analysis.tempo, beat_times=analysis.beat_times,
+        time_signature=analysis.time_signature,
+    )
     for name, meta in stems_meta.items():
         meta["notes"] = "notes.json" if tracks.get(name, {}).get("notes") else None
 

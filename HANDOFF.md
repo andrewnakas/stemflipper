@@ -229,6 +229,17 @@
   persists across restart (bus starts at 0.3); the DOM slider's input event drives setVolume (→0.4); mute
   still toggles; buses cleared after stop (no leak). 86 fast tests green (no backend change). iter 7 pushed
   to main (Pages).
+- **2026-07-14 (Opus, loop iter 8 — bar/beat gridlines on the roll):** The piano-roll now draws a real
+  DAW timeline (bright bar lines + bar numbers, faint beat lines) instead of a fixed 8-division time
+  grid. BACKEND: `export.write_notes()` gained optional `tempo`/`beat_times`/`time_signature` → written
+  into `notes.json` (`tempo`,`beats`,`time_signature`); pipeline passes `analysis.*`. FRONTEND:
+  `makePianoRoll(stem, dur, onScrub, grid)` takes `{beats, beatsPerBar}` (beatsPerBar = time-sig
+  numerator) and draws bar/beat lines when present, else falls back to the old grid (safe if the Space
+  hasn't redeployed). Verified: export tests (+1 `test_write_notes_with_grid`; back-compat `test_write_notes`
+  asserts tempo/beats absent when not passed); real Chrome render — grid parsed (24 beats, 4/4), bar
+  numbers 1-6 visible in the screenshot, ~9 gridline columns, zero exceptions. **87 fast tests green**
+  (was 86; +1). BACKEND change (notes.json shape) — batched for Space redeploy; frontend degrades
+  gracefully until then. iter 8 pushed to main.
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
