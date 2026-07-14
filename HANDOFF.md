@@ -239,7 +239,21 @@
   asserts tempo/beats absent when not passed); real Chrome render — grid parsed (24 beats, 4/4), bar
   numbers 1-6 visible in the screenshot, ~9 gridline columns, zero exceptions. **87 fast tests green**
   (was 86; +1). BACKEND change (notes.json shape) — batched for Space redeploy; frontend degrades
-  gracefully until then. iter 8 pushed to main.
+  gracefully until then. iter 8 pushed to main. **DEPLOYED** (user-approved): Space rebuilt RUNNING
+  (~2.5 min); beat grid now shows on live songs.
+- **2026-07-14 (Opus, loop iter 9 — export reconstructed mix as WAV):** You can now SAVE the
+  reconstruction, not just play it (`web/index.html`, client-only → Pages). New ⬇︎ Mix button renders
+  the whole song offline and downloads a 16-bit PCM WAV. Refactored playback: extracted
+  `transport.buildMix(ctx, dest, offset, atCtx)` (builds master chain + per-track buses + schedules all
+  audible stems) shared by live `start()` AND the new `renderOffline()` (swaps this.ctx/sources/_ir to
+  an OfflineAudioContext, +1.8 s reverb tail, restores in finally — never touches live audio, so the
+  export is identical to playback and respects solo/mute/volume). `reverbIR()`→`makeIR(ctx)` (buffers
+  are ctx-bound; offline builds its own, keyed by `_irCtx`). Added `audioBufferToWav()` (RIFF/PCM
+  encoder) + `downloadMix()`. Verified in real Chrome (CDP), zero errors: live play STILL works after
+  the refactor (regression check — active + 3-node chain + buses); renderOffline → stereo 13.8 s,
+  peak 0.626, non-silent; live ctx restored + replays after render; WAV header valid (RIFF/WAVE/fmt/data,
+  2ch/16bit/44.1k, exact byte length, audio/wav). 87 fast tests green (no backend change). iter 9 pushed
+  to main (Pages).
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.

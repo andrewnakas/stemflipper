@@ -107,6 +107,12 @@
       pointer-events: none;
     }
     .transport .tclock { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; white-space: nowrap; }
+    .transport .dlmix {
+      background: var(--panel); color: var(--accent2); border: 1px solid var(--line);
+      border-radius: 8px; padding: 7px 12px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+    }
+    .transport .dlmix:hover { border-color: var(--accent2); }
+    .transport .dlmix:disabled { opacity: .6; cursor: progress; }
     .thint { color: var(--muted); font-size: 12px; margin-top: 8px; }
     .thint kbd {
       background: var(--panel); border: 1px solid var(--line); border-bottom-width: 2px;
@@ -155,6 +161,7 @@
           <div class="knob" id="scrubKnob"></div>
         </div>
         <div class="tclock" id="clock">0:00 / 0:00</div>
+        <button class="dlmix" id="dlmix" title="Render the reconstruction to a WAV file">⬇︎ Mix</button>
       </div>
       <div class="thint" id="thint">Drag the bar or any roll to scrub · <kbd>Space</kbd> play/pause · <kbd>←</kbd><kbd>→</kbd> nudge (<kbd>Shift</kbd> = 5s)</div>
 
@@ -201,6 +208,7 @@
       scrubHead: document.getElementById("scrubHead"),
       scrubKnob: document.getElementById("scrubKnob"),
       clock: document.getElementById("clock"),
+      dlmix: document.getElementById("dlmix"),
     };
 
     let chosen = null;
@@ -703,12 +711,12 @@
         }
       },
 
-      // A short synthetic reverb impulse (decaying, slightly diffused noise). Cached on
-      // the ctx so we build it once. Gives the dry blips a sense of shared space so the
-      // reconstructed song sounds cohesive rather than like isolated test tones.
-      reverbIR() {
-        if (this._ir) return this._ir;
-        const ctx = this.ctx, sr = ctx.sampleRate, len = Math.floor(sr * 1.6);
+      // A short synthetic reverb impulse (decaying, slightly diffused noise) built on the
+      // GIVEN context — buffers are context-bound, so the offline render makes its own.
+      // Cached per transport instance for the live ctx; offline resets this._ir first.
+      makeIR(ctx) {
+        if (this._ir && this._irCtx === ctx) return this._ir;
+        const sr = ctx.sampleRate, len = Math.floor(sr * 1.6);
         const buf = ctx.createBuffer(2, len, sr);
         for (let ch = 0; ch < 2; ch++) {
           const d = buf.getChannelData(ch);
@@ -718,8 +726,58 @@
             d[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 2.5) * Math.min(1, t * 40);
           }
         }
-        this._ir = buf;
+        this._ir = buf; this._irCtx = ctx;
         return buf;
+      },
+
+      // Build the master chain (gain -> compressor -> dest, + reverb send) on `ctx`,
+      // wire it to `dest`, and schedule every audible stem's notes from song-time
+      // `offset`. Returns the master gain node. Shared by live playback and offline
+      // render so the exported WAV is identical to what you hear. Respects solo/mute
+      // and per-stem volume.
+      buildMix(ctx, dest, offset, atCtx) {
+        const master = ctx.createGain();
+        master.gain.value = 0.3;
+        const comp = ctx.createDynamicsCompressor();
+        comp.threshold.value = -14; comp.knee.value = 20; comp.ratio.value = 3;
+        comp.attack.value = 0.004; comp.release.value = 0.18;
+        master.connect(comp);
+        const send = ctx.createGain(); send.gain.value = 0.14;
+        const verb = ctx.createConvolver(); verb.buffer = this.makeIR(ctx);
+        master.connect(send); send.connect(verb); verb.connect(comp);
+        comp.connect(dest);
+
+        const audible = this.soloName
+          ? this.tracks.filter((t) => t.name === this.soloName)
+          : this.tracks.filter((t) => !this.muted.has(t.name));
+        const gainScale = 1 / Math.sqrt(Math.max(1, audible.length));
+        const buses = [];
+        for (const t of audible) {
+          const bus = ctx.createGain();
+          bus.gain.value = t.volume == null ? 1 : t.volume;
+          bus.connect(master);
+          this.scheduleStem(t, offset, atCtx, gainScale, bus);
+          buses.push({ track: t, bus });
+        }
+        return { master, comp, send, verb, buses };
+      },
+
+      // Render the whole song to an AudioBuffer via OfflineAudioContext (for WAV export).
+      // Swaps this.ctx/sources to the offline context so the existing scheduleStem/
+      // playDrum code (which read this.ctx and push to this.sources) target it, then
+      // restores. Adds reverb tail time so the ending rings out. Never touches live audio.
+      async renderOffline() {
+        const wasCtx = this.ctx, wasSources = this.sources, wasIr = this._ir;
+        const sr = 44100;
+        const tail = 1.8;                    // reverb ring-out
+        const octx = new OfflineAudioContext(2, Math.ceil((this.duration + tail) * sr), sr);
+        this.ctx = octx; this.sources = []; this._ir = null;   // fresh IR on the offline ctx
+        try {
+          this.buildMix(octx, octx.destination, 0, 0);
+          return await octx.startRendering();
+        } finally {
+          this.ctx = wasCtx; this.sources = wasSources; this._ir = wasIr;
+        }
       },
 
       // Start (or restart) audio from song-time `offset`. Respects solo/mute state.
@@ -727,37 +785,11 @@
         this.stopAudio();
         const ctx = this.ensureCtx();
 
-        // Master chain: sum -> gain -> compressor/limiter -> destination, with a
-        // parallel reverb send. The compressor glues the mix and stops the summed
-        // stems from clipping (a smarter safety net than raw 1/sqrt(n) attenuation).
-        this.master = ctx.createGain();
-        this.master.gain.value = 0.3;
-        const comp = ctx.createDynamicsCompressor();
-        comp.threshold.value = -14; comp.knee.value = 20; comp.ratio.value = 3;
-        comp.attack.value = 0.004; comp.release.value = 0.18;
-        this.master.connect(comp);
-        // reverb send (subtle — keeps clarity but adds space)
-        const send = ctx.createGain(); send.gain.value = 0.14;
-        const verb = ctx.createConvolver(); verb.buffer = this.reverbIR();
-        this.master.connect(send); send.connect(verb); verb.connect(comp);
-        comp.connect(ctx.destination);
-        this._chain = [comp, send, verb];
-
         const atCtx = ctx.currentTime + 0.06;
-        const audible = this.soloName
-          ? this.tracks.filter((t) => t.name === this.soloName)
-          : this.tracks.filter((t) => !this.muted.has(t.name));
-        // Quieter per-voice when many stems sound at once so the sum doesn't clip.
-        const gainScale = 1 / Math.sqrt(Math.max(1, audible.length));
-        // Each stem gets its own bus gain (its volume fader), notes -> bus -> master.
-        // Live-adjustable while playing (setVolume just writes bus.gain).
-        for (const t of audible) {
-          const bus = ctx.createGain();
-          bus.gain.value = t.volume == null ? 1 : t.volume;
-          bus.connect(this.master);
-          t._bus = bus;
-          this.scheduleStem(t, offset, atCtx, gainScale, bus);
-        }
+        const mix = this.buildMix(ctx, ctx.destination, offset, atCtx);
+        this.master = mix.master;
+        this._chain = [mix.comp, mix.send, mix.verb];
+        for (const b of mix.buses) b.track._bus = b.bus;   // live volume faders
 
         this.startCtxTime = atCtx;
         this.startOffset = offset;
@@ -919,8 +951,56 @@
       return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
     }
 
+    // Encode an AudioBuffer to a 16-bit PCM WAV Blob (stereo/mono, interleaved).
+    function audioBufferToWav(buf) {
+      const nCh = buf.numberOfChannels, sr = buf.sampleRate, n = buf.length;
+      const bytesPerSample = 2, blockAlign = nCh * bytesPerSample;
+      const dataLen = n * blockAlign;
+      const ab = new ArrayBuffer(44 + dataLen);
+      const dv = new DataView(ab);
+      const ws = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+      ws(0, "RIFF"); dv.setUint32(4, 36 + dataLen, true); ws(8, "WAVE");
+      ws(12, "fmt "); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true);
+      dv.setUint16(22, nCh, true); dv.setUint32(24, sr, true);
+      dv.setUint32(28, sr * blockAlign, true); dv.setUint16(32, blockAlign, true);
+      dv.setUint16(34, 16, true);
+      ws(36, "data"); dv.setUint32(40, dataLen, true);
+      const chans = [];
+      for (let c = 0; c < nCh; c++) chans.push(buf.getChannelData(c));
+      let off = 44;
+      for (let i = 0; i < n; i++) {
+        for (let c = 0; c < nCh; c++) {
+          let v = Math.max(-1, Math.min(1, chans[c][i]));
+          dv.setInt16(off, v < 0 ? v * 0x8000 : v * 0x7fff, true);
+          off += 2;
+        }
+      }
+      return new Blob([ab], { type: "audio/wav" });
+    }
+
+    // Render the reconstructed song offline and download it as a WAV.
+    async function downloadMix() {
+      if (!transport.tracks.length) return;
+      const btn = els.dlmix;
+      const label = btn.textContent;
+      btn.disabled = true; btn.textContent = "Rendering…";
+      try {
+        const buf = await transport.renderOffline();
+        const url = URL.createObjectURL(audioBufferToWav(buf));
+        const a = document.createElement("a");
+        a.href = url; a.download = "stemflipper-mix.wav";
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        btn.disabled = false; btn.textContent = label;
+      }
+    }
+
     // Transport bar: play/stop + scrub the whole song.
     els.playAll.addEventListener("click", () => transport.playAllToggle());
+    els.dlmix.addEventListener("click", downloadMix);
     (function wireScrubBar() {
       const bar = els.scrub;
       let dragging = false;
