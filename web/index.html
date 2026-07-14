@@ -73,6 +73,7 @@
       border-radius: 7px; padding: 4px 8px; font-size: 12px; cursor: pointer; white-space: nowrap; }
     .mutebtn:hover { border-color: var(--accent); color: var(--ink); }
     .mutebtn.muted { color: var(--err); border-color: var(--err); opacity: .85; }
+    input.vol { width: 74px; accent-color: var(--accent2); cursor: pointer; margin: 0; }
     audio { width: 100%; margin-top: 6px; }
     canvas.roll { width: 100%; margin-top: 8px; border-radius: 8px; display: block; cursor: ew-resize; touch-action: none; }
 
@@ -401,9 +402,15 @@
             mute.className = "mutebtn";
             mute.textContent = "Mute";
             mute.onclick = () => transport.muteToggle(name);
+            // Per-stem volume fader (0–100%), like a mixer channel.
+            const vol = document.createElement("input");
+            vol.type = "range"; vol.min = "0"; vol.max = "100"; vol.value = "100";
+            vol.className = "vol"; vol.title = "Volume";
+            vol.oninput = () => transport.setVolume(name, vol.value / 100);
+            ctrl.appendChild(vol);
             ctrl.appendChild(solo);
             ctrl.appendChild(mute);
-            transport.addTrack({ name, stem: stemNotes, roll, box, soloBtn: solo, muteBtn: mute });
+            transport.addTrack({ name, stem: stemNotes, roll, box, soloBtn: solo, muteBtn: mute, volume: 1 });
           }
           els.stems.appendChild(box);
         });
@@ -569,9 +576,9 @@
       },
 
       // Synthesize one drum hit at ctx-time `on`. `vv` is 0..1 velocity, which drives
-      // both loudness and decay length. Routes into the per-note `gain` → master.
+      // both loudness and decay length. Routes into the per-note `gain` (→ the stem bus).
       // GM pitches we emit: 35/36 kick, 38/40 snare, 42/46 hat (others → snare-ish).
-      playDrum(pitch, on, vv, gain, master) {
+      playDrum(pitch, on, vv, gain) {
         const ctx = this.ctx;
         const noiseBuf = () => {
           const b = ctx.createBuffer(1, 4096, ctx.sampleRate);
@@ -630,9 +637,10 @@
       },
 
       // Schedule the WebAudio notes for one stem, starting the song at `offset` seconds.
-      // atCtx = audioCtx.currentTime that song-time `offset` maps to.
-      scheduleStem(track, offset, atCtx, gainScale) {
-        const ctx = this.ctx, master = this.master;
+      // atCtx = audioCtx.currentTime that song-time `offset` maps to. `bus` is the stem's
+      // per-track gain node (its volume fader) sitting between the notes and the master.
+      scheduleStem(track, offset, atCtx, gainScale, bus) {
+        const ctx = this.ctx;
         for (const [pitch, start, end, vel] of track.stem.notes) {
           if (end <= offset) continue;                 // already past
           const on = atCtx + Math.max(0, start - offset);
@@ -643,8 +651,8 @@
           if (track.stem.is_drum) {
             // Synthesized drum voices (velocity drives loudness + decay length) — a
             // real kick/snare/hat character, not one bandpassed noise burst for all.
-            this.playDrum(pitch, on, vv, gain, master);
-            gain.connect(master);
+            this.playDrum(pitch, on, vv, gain);
+            gain.connect(bus);
           } else {
             // Subtractive synth voice: two slightly-detuned saws → a per-note lowpass
             // whose cutoff sweeps with an envelope (the classic "pluck"), plus an ADSR
@@ -667,7 +675,7 @@
             gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, sus), on + atk + dec);
             gain.gain.setValueAtTime(Math.max(0.0001, sus), Math.max(on + atk + dec, off - 0.04));
             gain.gain.exponentialRampToValueAtTime(0.0001, off + 0.05);
-            oscA.connect(lp); oscB.connect(lp); lp.connect(gain); gain.connect(master);
+            oscA.connect(lp); oscB.connect(lp); lp.connect(gain); gain.connect(bus);
             oscA.start(on); oscB.start(on);
             oscA.stop(off + 0.08); oscB.stop(off + 0.08);
             this.sources.push(oscA, oscB);
@@ -721,7 +729,15 @@
           : this.tracks.filter((t) => !this.muted.has(t.name));
         // Quieter per-voice when many stems sound at once so the sum doesn't clip.
         const gainScale = 1 / Math.sqrt(Math.max(1, audible.length));
-        for (const t of audible) this.scheduleStem(t, offset, atCtx, gainScale);
+        // Each stem gets its own bus gain (its volume fader), notes -> bus -> master.
+        // Live-adjustable while playing (setVolume just writes bus.gain).
+        for (const t of audible) {
+          const bus = ctx.createGain();
+          bus.gain.value = t.volume == null ? 1 : t.volume;
+          bus.connect(this.master);
+          t._bus = bus;
+          this.scheduleStem(t, offset, atCtx, gainScale, bus);
+        }
 
         this.startCtxTime = atCtx;
         this.startOffset = offset;
@@ -756,6 +772,7 @@
         if (this.master) { try { this.master.disconnect(); } catch (_) {} this.master = null; }
         for (const n of this._chain || []) { try { n.disconnect(); } catch (_) {} }
         this._chain = null;
+        for (const t of this.tracks) { if (t._bus) { try { t._bus.disconnect(); } catch (_) {} t._bus = null; } }
       },
 
       // Stop playback, remembering where we stopped so Play resumes from there.
@@ -794,6 +811,17 @@
         if (this.muted.has(name)) this.muted.delete(name); else this.muted.add(name);
         this.refreshTrackBtns();
         if (this.active && !this.soloName) this.start(this.now());
+      },
+
+      // Set a stem's volume (0..1). Stored on the track and, if it's currently sounding,
+      // written straight to its live bus gain — no reschedule needed (smooth fader).
+      setVolume(name, v) {
+        const t = this.tracks.find((x) => x.name === name);
+        if (!t) return;
+        t.volume = Math.max(0, Math.min(1, v));
+        if (t._bus && this.ctx) {
+          t._bus.gain.setTargetAtTime(t.volume, this.ctx.currentTime, 0.01);
+        }
       },
 
       // Seek to song-time `t`. A scrub gesture arrives as start→move…→end. While

@@ -219,6 +219,16 @@
   zero exceptions: Space toggles play↔stop; ←/→ = ±1 s (5→6→5); Shift+→ = +5 s (5→10); Home→0; End→12;
   **Space while a text input is focused does NOT toggle play** (typing guard holds); hint renders. 86
   fast tests green (no backend change). iter 6 pushed to main (Pages).
+- **2026-07-14 (Opus, loop iter 7 — per-stem volume faders / web mixer):** Each stem now has a volume
+  fader (0-100% range slider) — a real mixer channel (`web/index.html`, client-only → Pages). Refactored
+  playback routing: notes → a per-track BUS gain node → master (was notes → master directly). `start()`
+  builds one bus per audible track at its stored `t.volume`; `transport.setVolume(name, v)` stores it and,
+  if playing, writes the live bus gain via `setTargetAtTime` (smooth, no reschedule — unlike mute).
+  `stopAudio()` disconnects + nulls each `t._bus`. `playDrum` lost its unused `master` param. Verified in
+  real Chrome (CDP), zero exceptions: 3 faders render; a live fader stores 0.5 + bus exists; volume
+  persists across restart (bus starts at 0.3); the DOM slider's input event drives setVolume (→0.4); mute
+  still toggles; buses cleared after stop (no leak). 86 fast tests green (no backend change). iter 7 pushed
+  to main (Pages).
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
