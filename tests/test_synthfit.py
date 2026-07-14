@@ -71,6 +71,42 @@ def test_synth_fit_syntheon_falls_back_when_absent(router_fixtures):
     assert fit.source in ("warmstart", "syntheon")  # syntheon absent => warmstart
 
 
+def test_sustained_tone_gets_fast_attack():
+    """A steady, held tone has an INSTANT onset — its amp attack must be fast, even
+    though its RMS peak can fall anywhere in the clip. (Regression guard: the old
+    fraction-of-clip estimator reported a bogus ~400 ms attack for sustained sounds.)"""
+    sr = 44100
+    t = np.arange(int(sr * 2)) / sr
+    sustained = np.sin(2 * np.pi * 440 * t).astype(np.float32)
+    fit = synthfit.synth_fit(sustained, sr)
+    assert fit.scores["env_attack"] < 0.06, f"attack {fit.scores['env_attack']} too slow"
+
+
+def test_slow_swell_gets_slower_attack_than_pluck():
+    """A 2 s linear fade-in reads a slower attack than an instant-onset pluck."""
+    sr = 44100
+    t = np.arange(int(sr * 2)) / sr
+    swell = (np.sin(2 * np.pi * 440 * t) * (t / t.max())).astype(np.float32)
+    pluck = (np.sin(2 * np.pi * 440 * t) * np.exp(-t * 6)).astype(np.float32)
+    a_swell = synthfit.synth_fit(swell, sr).scores["env_attack"]
+    a_pluck = synthfit.synth_fit(pluck, sr).scores["env_attack"]
+    assert a_swell > a_pluck
+
+
+def test_osc2_level_scales_with_noise():
+    """Once the second oscillator is on (noisier stem), its level rises with flatness
+    rather than sitting at a fixed value."""
+    sr = 44100
+    t = np.arange(sr) / sr
+    rng = np.random.default_rng(0)
+    a_little = (np.sin(2 * np.pi * 440 * t) * 0.7 + rng.standard_normal(sr) * 0.12).astype(np.float32)
+    a_lot = (np.sin(2 * np.pi * 440 * t) * 0.4 + rng.standard_normal(sr) * 0.5).astype(np.float32)
+    lvl_little = synthfit.synth_fit(a_little, sr).preset["settings"]["osc_2_level"]
+    lvl_lot = synthfit.synth_fit(a_lot, sr).preset["settings"]["osc_2_level"]
+    # both should have osc2 on (noisy) and the noisier one louder
+    assert lvl_lot >= lvl_little > 0.0
+
+
 def test_cutoff_to_vital_midi_range():
     assert synthfit._cutoff_to_vital_midi(0.0) == pytest.approx(8.0)
     assert synthfit._cutoff_to_vital_midi(1.0) == pytest.approx(136.0)

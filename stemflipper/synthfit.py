@@ -49,20 +49,29 @@ def _features(y: np.ndarray, sr: int) -> dict:
         return {}
     centroid = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
     flatness = float(np.mean(librosa.feature.spectral_flatness(y=y)))
-    rms = librosa.feature.rms(y=y)[0]
+    hop = 512
+    rms = librosa.feature.rms(y=y, hop_length=hop)[0]
     peak = float(rms.max()) or 1.0
     voiced = rms > 0.1 * peak
     v = rms[voiced] if voiced.any() else rms
-    # sustain: tail energy vs peak; attack: how fast it reaches peak
+    # sustain: tail energy vs peak
     tail = v[int(len(v) * 0.4):]
     sustain = float(np.median(tail) / peak) if len(tail) else 0.0
-    peak_frame = int(np.argmax(rms))
-    attack_frac = peak_frame / max(1, len(rms))
+
+    # attack TIME (seconds): from the first voiced frame until RMS first reaches 90% of
+    # peak. This is a true rise-time — robust for SUSTAINED tones (whose peak frame can
+    # fall anywhere), unlike the old "fraction of the clip where the peak lands", which
+    # reported a slow attack for any steady sound.
+    frame_s = hop / sr
+    onset_idx = int(np.argmax(voiced)) if voiced.any() else 0
+    thresh = 0.9 * peak
+    rise = np.argmax(rms[onset_idx:] >= thresh)  # first frame at/above 90% peak
+    attack_time = float(rise) * frame_s
     return {
         "centroid": centroid,
         "flatness": flatness,
         "sustain": sustain,
-        "attack_frac": attack_frac,
+        "attack_time": attack_time,
     }
 
 
@@ -83,7 +92,7 @@ def _build_preset(feats: dict, sr: int) -> tuple[dict, str, dict]:
     """Author a minimal Vital preset JSON from measured features."""
     flat = feats.get("flatness", 0.02)
     sustain = feats.get("sustain", 0.5)
-    attack = feats.get("attack_frac", 0.1)
+    attack = feats.get("attack_time", 0.01)
     centroid = feats.get("centroid", 2000.0)
 
     # waveform: purer tone → saw (rich harmonics, classic subtractive); noisier → add osc2
@@ -95,16 +104,23 @@ def _build_preset(feats: dict, sr: int) -> tuple[dict, str, dict]:
         waveform, osc2_on = "saw+noise", 1.0
 
     cutoff = _cutoff_from_centroid(centroid, sr)
-    # ADSR from envelope cues (Vital env times are ~seconds on a warped knob; keep simple)
-    env_attack = float(np.clip(attack * 2.0, 0.0, 0.4))
+    # ADSR from envelope cues. env_attack is a real measured rise time; clamp to a
+    # musical 5-150 ms (most synths don't have a slower amp attack, and a 400 ms attack
+    # from the old fraction-based estimate made sustained tones feel mushy/wrong).
+    env_attack = float(np.clip(attack, 0.005, 0.15))
     env_sustain = float(np.clip(sustain, 0.0, 1.0))
     env_release = float(np.clip(0.1 + sustain * 0.5, 0.02, 0.9))
+    # osc2 level scales with how noisy/rich the stem is (once osc2 is on): a smoother,
+    # more faithful response than a fixed 0.4. flatness 0.02→0.5 maps to level 0.2→0.6.
+    osc2_level = 0.0
+    if osc2_on:
+        osc2_level = float(np.clip(0.2 + (flat - 0.02) / 0.48 * 0.4, 0.2, 0.6))
 
     settings = {
         "osc_1_on": 1.0,
         "osc_1_level": 0.7,
         "osc_2_on": osc2_on,
-        "osc_2_level": 0.4 if osc2_on else 0.0,
+        "osc_2_level": round(osc2_level, 3),
         "filter_1_on": 1.0,
         "filter_1_cutoff": _cutoff_to_vital_midi(cutoff),
         "filter_1_resonance": 0.3,

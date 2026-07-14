@@ -197,6 +197,17 @@
   (1.00→0.00). Net: no verifiable improvement → not shipped (honest-verification principle; drums are a
   documented weakness, real fix is an ADT model blocked on NC licensing). 83 fast tests still green
   (no backend change this iter). iter 4 pushed to main (Pages).
+- **2026-07-14 (Opus, loop iter 5 — synth-fit attack + osc2 accuracy):** Fixed a real synth-fit bug in
+  `stemflipper/synthfit.py`. OLD: `attack_frac` = where the RMS peak frame falls (0..1 of clip) × 2.0
+  clamped 0.4 s — so ANY sustained tone (peak lands mid-file) got a bogus ~400 ms amp attack and felt
+  mushy. NEW: `_features` measures a real ATTACK TIME (seconds) = first-voiced-frame → first frame ≥90%
+  peak; `_build_preset` clamps it to a musical 5-150 ms. Also `osc_2_level` now scales with spectral
+  flatness (0.02→0.5 ⇒ 0.2→0.6) instead of a fixed 0.4 — smoother, more faithful. Verified on synthetic
+  signals: sustained tone 400 ms→23 ms attack (correct — instant onset); slow 2 s swell → 150 ms (clamp,
+  still slower than a pluck's 23 ms); noisy stem osc2_level 0.385 vs pure 0.0. New tests in
+  `test_synthfit.py` (+3: fast-attack-for-sustained regression guard, swell>pluck, osc2-by-noise).
+  **86 fast tests green** (was 83; +3). BACKEND change (affects bundle `.vital` presets) — batched for
+  Space redeploy WITH iter 3 (cleanup). iter 5 pushed to main.
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
