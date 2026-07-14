@@ -207,7 +207,18 @@
   still slower than a pluck's 23 ms); noisy stem osc2_level 0.385 vs pure 0.0. New tests in
   `test_synthfit.py` (+3: fast-attack-for-sustained regression guard, swell>pluck, osc2-by-noise).
   **86 fast tests green** (was 83; +3). BACKEND change (affects bundle `.vital` presets) — batched for
-  Space redeploy WITH iter 3 (cleanup). iter 5 pushed to main.
+  Space redeploy WITH iter 3 (cleanup). iter 5 pushed to main. **DEPLOYED** (batched w/ iter 3, user-
+  approved): Space rebuilt to RUNNING in ~40 s; iters 2/3/5 backend changes now all live.
+- **2026-07-14 (Opus, loop iter 6 — keyboard transport + scrub hint):** DAW-muscle-memory keyboard
+  controls for the web player (`web/index.html`, client-only → Pages). A `keydown` handler (active only
+  when a result is on screen and the user isn't typing in input/textarea/select — guards the upload
+  flow): Space = play/pause, ←/→ nudge 1 s (Shift = 5 s), Home/0 = to start, End = to end. Added
+  `transport.nudge(deltaS)` + `transport.seekTo(t)` (relative/absolute seeks with scrub-gesture
+  semantics so playback reschedules from the new spot). Plus a discoverable hint line under the
+  transport bar with styled `<kbd>` chips. Verified in real Chrome via CDP `Input.dispatchKeyEvent`,
+  zero exceptions: Space toggles play↔stop; ←/→ = ±1 s (5→6→5); Shift+→ = +5 s (5→10); Home→0; End→12;
+  **Space while a text input is focused does NOT toggle play** (typing guard holds); hint renders. 86
+  fast tests green (no backend change). iter 6 pushed to main (Pages).
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
