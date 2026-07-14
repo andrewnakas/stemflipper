@@ -63,12 +63,49 @@
     .stems { margin-top: 14px; display: grid; gap: 10px; }
     .stem { background: var(--panel2); border-radius: 10px; padding: 10px 12px; }
     .stem span { font-size: 13px; color: var(--muted); }
+    .stem.solo { outline: 1px solid var(--accent); }
     .stemhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .playbtn { background: var(--panel); color: var(--accent); border: 1px solid var(--line);
       border-radius: 7px; padding: 4px 10px; font-size: 12px; cursor: pointer; white-space: nowrap; }
     .playbtn:hover { border-color: var(--accent); }
+    .stemctrl { display: flex; align-items: center; gap: 8px; }
+    .mutebtn { background: transparent; color: var(--muted); border: 1px solid var(--line);
+      border-radius: 7px; padding: 4px 8px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+    .mutebtn:hover { border-color: var(--accent); color: var(--ink); }
+    .mutebtn.muted { color: var(--err); border-color: var(--err); opacity: .85; }
     audio { width: 100%; margin-top: 6px; }
-    canvas.roll { width: 100%; margin-top: 8px; border-radius: 8px; display: block; }
+    canvas.roll { width: 100%; margin-top: 8px; border-radius: 8px; display: block; cursor: ew-resize; touch-action: none; }
+
+    /* Master transport for playing every stem's notes together */
+    .transport {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      background: var(--panel2); border: 1px solid var(--line); border-radius: 12px;
+      padding: 12px 14px; margin-top: 14px;
+    }
+    .transport button.tplay {
+      background: var(--accent); color: #1a1206; border: 0; border-radius: 9px;
+      font-weight: 700; font-size: 14px; padding: 8px 16px; cursor: pointer; white-space: nowrap;
+    }
+    .transport button.tplay:hover { filter: brightness(1.06); }
+    .transport .scrub {
+      flex: 1 1 220px; height: 30px; position: relative; cursor: pointer;
+      background: #12151c; border: 1px solid var(--line); border-radius: 8px; touch-action: none;
+      min-width: 160px; overflow: hidden;
+    }
+    .transport .scrub .fill {
+      position: absolute; left: 0; top: 0; bottom: 0; width: 0;
+      background: linear-gradient(90deg, rgba(255,180,84,.28), rgba(106,213,192,.28)); pointer-events: none;
+    }
+    .transport .scrub .head {
+      position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent);
+      transform: translateX(-1px); pointer-events: none;
+    }
+    .transport .scrub .knob {
+      position: absolute; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px;
+      border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgba(255,180,84,.2);
+      pointer-events: none;
+    }
+    .transport .tclock { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; white-space: nowrap; }
     footer { color: var(--muted); font-size: 12px; margin-top: 28px; text-align: center; }
     footer a { color: var(--accent2); }
     code { background: var(--panel2); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
@@ -103,6 +140,17 @@
     <div class="card" id="result">
       <a class="dl" id="download" download>⬇︎ Download DAW project bundle (.zip)</a>
       <div class="summary" id="summary"></div>
+
+      <div class="transport" id="transport" style="display:none">
+        <button class="tplay" id="playAll">▶ Play song</button>
+        <div class="scrub" id="scrub" title="Drag to scrub through the whole song">
+          <div class="fill" id="scrubFill"></div>
+          <div class="head" id="scrubHead"></div>
+          <div class="knob" id="scrubKnob"></div>
+        </div>
+        <div class="tclock" id="clock">0:00 / 0:00</div>
+      </div>
+
       <div class="stems" id="stems"></div>
     </div>
 
@@ -139,6 +187,13 @@
       download: document.getElementById("download"),
       summary: document.getElementById("summary"),
       stems: document.getElementById("stems"),
+      transport: document.getElementById("transport"),
+      playAll: document.getElementById("playAll"),
+      scrub: document.getElementById("scrub"),
+      scrubFill: document.getElementById("scrubFill"),
+      scrubHead: document.getElementById("scrubHead"),
+      scrubKnob: document.getElementById("scrubKnob"),
+      clock: document.getElementById("clock"),
     };
 
     let chosen = null;
@@ -300,7 +355,8 @@
         els.summary.innerHTML = renderSummary(summaryMd);
 
         els.stems.innerHTML = "";
-        stopPlayback();  // stop any prior stem still playing
+        resetTransport();   // stop anything playing + clear the old song's tracks
+
         previews.forEach((p, i) => {
           const name = PREVIEW_NAMES[i] || "stem " + (i + 1);
           const url = fileUrl(p);
@@ -311,7 +367,12 @@
 
           const head = document.createElement("div");
           head.className = "stemhead";
-          head.innerHTML = `<span>${name}${count ? ` · ${count} notes` : ""}</span>`;
+          const label = document.createElement("span");
+          label.textContent = `${name}${count ? ` · ${count} notes` : ""}`;
+          head.appendChild(label);
+          const ctrl = document.createElement("div");
+          ctrl.className = "stemctrl";
+          head.appendChild(ctrl);
           box.appendChild(head);
 
           if (url) {
@@ -320,17 +381,28 @@
             box.appendChild(a);
           }
           if (stemNotes && count) {
-            const roll = makePianoRoll(stemNotes, notes.duration);
-            const play = document.createElement("button");
-            play.className = "playbtn";
-            play.textContent = "▶ Play notes";
-            play.onclick = () => togglePlay(name, stemNotes, notes.duration, roll, play);
-            head.appendChild(play);
+            // Dragging a roll scrubs the whole song (all rolls move in sync).
+            const roll = makePianoRoll(stemNotes, notes.duration,
+              (t, phase) => transport.seek(t, phase));
             box.appendChild(roll.canvas);
+            // Solo this stem's notes (mutes the others while it plays).
+            const solo = document.createElement("button");
+            solo.className = "playbtn";
+            solo.textContent = "▶ Solo";
+            solo.onclick = () => transport.soloToggle(name);
+            // Mute this stem out of the full-song mix.
+            const mute = document.createElement("button");
+            mute.className = "mutebtn";
+            mute.textContent = "Mute";
+            mute.onclick = () => transport.muteToggle(name);
+            ctrl.appendChild(solo);
+            ctrl.appendChild(mute);
+            transport.addTrack({ name, stem: stemNotes, roll, box, soloBtn: solo, muteBtn: mute });
           }
           els.stems.appendChild(box);
         });
 
+        transport.finalize(notes.duration);
         els.result.classList.add("on");
         setStatus("Done ✓");
       } catch (err) {
@@ -360,10 +432,11 @@
     // General-MIDI percussion names for the common drum pitches we emit (36/38/42).
     const GM_DRUMS = { 35: "Kick", 36: "Kick", 38: "Snare", 40: "Snare", 42: "Hat", 46: "Hat", 49: "Crash", 51: "Ride" };
 
-    // Build a DAW-style piano-roll for a stem's notes. Returns { canvas, render, dur }
-    // where render(playT) redraws the roll and, if playT != null, a playhead + lit notes.
-    // stem = { is_drum, notes: [[pitch,start,end,vel],...] }; duration bounds the X axis.
-    function makePianoRoll(stem, duration) {
+    // Build a DAW-style piano-roll for a stem's notes.
+    // Returns { canvas, render, dur, timeAtX } — render(playT) redraws the roll and,
+    // if playT != null, a playhead + lit notes; timeAtX(clientX) maps a pointer X to a
+    // time in seconds (for scrubbing). stem = { is_drum, notes: [[pitch,start,end,vel],...] }.
+    function makePianoRoll(stem, duration, onScrub) {
       const notes = stem.notes;
       const W = 640, H = stem.is_drum ? 110 : 150, PAD_L = 34, PAD_B = 14;
       const canvas = document.createElement("canvas");
@@ -383,6 +456,15 @@
       const x = (t) => PAD_L + (t / dur) * plotW;
       const y = (p) => 4 + (1 - (p - loP) / (hiP - loP)) * plotH;
       const noteH = stem.is_drum ? 4 : Math.max(2, plotH / (hiP - loP) - 1);
+
+      // Pointer X (client coords) → time in seconds, clamped to [0, dur]. The canvas
+      // is CSS-stretched to 100% width, so scale the hit point back into W units first.
+      function timeAtX(clientX) {
+        const r = canvas.getBoundingClientRect();
+        const px = ((clientX - r.left) / r.width) * W;
+        const t = ((px - PAD_L) / plotW) * dur;
+        return Math.max(0, Math.min(dur, t));
+      }
 
       function render(playT) {
         ctx.fillStyle = "#12151c"; ctx.fillRect(0, 0, W, H);
@@ -420,83 +502,268 @@
           ctx.lineWidth = 1;
         }
       }
+
+      // Scrubbing: press + drag anywhere on the roll to move the shared playhead.
+      // The gesture is reported up to the transport, which redraws every roll in sync
+      // and (if playing) reschedules audio from the new position.
+      let dragging = false;
+      const down = (ev) => {
+        dragging = true;
+        canvas.setPointerCapture?.(ev.pointerId);
+        onScrub(timeAtX(ev.clientX), "start");
+        ev.preventDefault();
+      };
+      const move = (ev) => { if (dragging) { onScrub(timeAtX(ev.clientX), "move"); ev.preventDefault(); } };
+      const up = (ev) => { if (dragging) { dragging = false; onScrub(timeAtX(ev.clientX), "end"); } };
+      canvas.addEventListener("pointerdown", down);
+      canvas.addEventListener("pointermove", move);
+      canvas.addEventListener("pointerup", up);
+      canvas.addEventListener("pointercancel", up);
+
       render(null);
-      return { canvas, render, dur };
+      return { canvas, render, dur, timeAtX };
     }
 
-    // --- WebAudio playback of a stem's notes ----------------------------------
-    let audioCtx = null;
-    let playing = null;   // { name, stop() } of the stem currently playing
+    // --- Shared transport: plays every stem's notes together on one timeline -----
+    // A single AudioContext clock drives all stems; every roll's playhead animates in
+    // sync from one rAF loop. Solo plays one stem (mutes the rest); Mute drops a stem
+    // from the full mix. Scrubbing (roll drag or the transport bar) seeks the whole song.
+    const transport = {
+      ctx: null,
+      tracks: [],          // { name, stem, roll, box, soloBtn, muteBtn }
+      muted: new Set(),    // stem names dropped from the full-song mix
+      duration: 0,
+      // playback state
+      active: false,       // audio is scheduled + running
+      soloName: null,      // non-null => only this stem is audible
+      startCtxTime: 0,     // audioCtx.currentTime when the current run began
+      startOffset: 0,      // song-time (s) that maps to startCtxTime
+      pausedAt: 0,         // song-time to show/seek from when not playing
+      scrubResume: null,   // what to resume after a scrub drag ({all} | {solo} | null)
+      master: null,
+      sources: [],
+      raf: 0,
 
-    function stopPlayback() {
-      if (playing) { playing.stop(); playing = null; }
-    }
+      ensureCtx() {
+        if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (this.ctx.state === "suspended") this.ctx.resume();
+        return this.ctx;
+      },
 
-    function togglePlay(name, stem, duration, roll, btn) {
-      if (playing && playing.name === name) { stopPlayback(); return; }
-      stopPlayback();
-      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-      if (audioCtx.state === "suspended") audioCtx.resume();
+      addTrack(t) { this.tracks.push(t); },
 
-      const t0 = audioCtx.currentTime + 0.05;
-      const master = audioCtx.createGain();
-      master.gain.value = 0.25;
-      master.connect(audioCtx.destination);
-      const sources = [];
+      finalize(duration) {
+        this.duration = duration || Math.max(1, ...this.tracks.map((t) => t.roll.dur));
+        els.transport.style.display = this.tracks.length ? "flex" : "none";
+        this.pausedAt = 0;
+        this.renderAll(0);
+        this.updateBar(0);
+      },
 
-      for (const [pitch, start, end, vel] of stem.notes) {
-        const gain = audioCtx.createGain();
-        const amp = Math.max(0.05, Math.min(1, vel / 127));
-        const on = t0 + start, off = t0 + Math.max(start + 0.03, end);
-        if (stem.is_drum) {
-          // short filtered noise burst — pitch picks the timbre band
-          const buf = audioCtx.createBuffer(1, 2048, audioCtx.sampleRate);
-          const d = buf.getChannelData(0);
-          for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-          const src = audioCtx.createBufferSource(); src.buffer = buf;
-          const bp = audioCtx.createBiquadFilter();
-          bp.type = "bandpass";
-          bp.frequency.value = pitch <= 38 ? 120 : pitch >= 42 ? 8000 : 2000;  // kick/hat/snare
-          gain.gain.setValueAtTime(amp, on);
-          gain.gain.exponentialRampToValueAtTime(0.001, on + 0.18);
-          src.connect(bp); bp.connect(gain); gain.connect(master);
-          src.start(on); src.stop(on + 0.2);
-          sources.push(src);
-        } else {
-          const osc = audioCtx.createOscillator();
-          osc.type = "sawtooth";
-          osc.frequency.value = 440 * Math.pow(2, (pitch - 69) / 12);
-          gain.gain.setValueAtTime(0, on);
-          gain.gain.linearRampToValueAtTime(amp, on + 0.01);
-          gain.gain.setValueAtTime(amp, Math.max(on + 0.02, off - 0.03));
-          gain.gain.linearRampToValueAtTime(0, off);
-          osc.connect(gain); gain.connect(master);
-          osc.start(on); osc.stop(off + 0.02);
-          sources.push(osc);
+      // Schedule the WebAudio notes for one stem, starting the song at `offset` seconds.
+      // atCtx = audioCtx.currentTime that song-time `offset` maps to.
+      scheduleStem(track, offset, atCtx, gainScale) {
+        const ctx = this.ctx, master = this.master;
+        for (const [pitch, start, end, vel] of track.stem.notes) {
+          if (end <= offset) continue;                 // already past
+          const on = atCtx + Math.max(0, start - offset);
+          const off = atCtx + Math.max(start + 0.03, end) - offset;
+          const gain = ctx.createGain();
+          const amp = Math.max(0.05, Math.min(1, vel / 127)) * gainScale;
+          if (track.stem.is_drum) {
+            const buf = ctx.createBuffer(1, 2048, ctx.sampleRate);
+            const d = buf.getChannelData(0);
+            for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+            const src = ctx.createBufferSource(); src.buffer = buf;
+            const bp = ctx.createBiquadFilter();
+            bp.type = "bandpass";
+            bp.frequency.value = pitch <= 38 ? 120 : pitch >= 42 ? 8000 : 2000;  // kick/hat/snare
+            gain.gain.setValueAtTime(amp, on);
+            gain.gain.exponentialRampToValueAtTime(0.001, on + 0.18);
+            src.connect(bp); bp.connect(gain); gain.connect(master);
+            src.start(on); src.stop(on + 0.2);
+            this.sources.push(src);
+          } else {
+            const osc = ctx.createOscillator();
+            osc.type = "sawtooth";
+            osc.frequency.value = 440 * Math.pow(2, (pitch - 69) / 12);
+            gain.gain.setValueAtTime(0, on);
+            gain.gain.linearRampToValueAtTime(amp, on + 0.01);
+            gain.gain.setValueAtTime(amp, Math.max(on + 0.02, off - 0.03));
+            gain.gain.linearRampToValueAtTime(0, off);
+            osc.connect(gain); gain.connect(master);
+            osc.start(on); osc.stop(off + 0.02);
+            this.sources.push(osc);
+          }
         }
-      }
+      },
 
-      btn.textContent = "■ Stop";
-      let raf;
-      const tick = () => {
-        const t = audioCtx.currentTime - t0;
-        if (t >= duration) { stopPlayback(); return; }
-        roll.render(t);
-        raf = requestAnimationFrame(tick);
-      };
-      raf = requestAnimationFrame(tick);
+      // Start (or restart) audio from song-time `offset`. Respects solo/mute state.
+      start(offset) {
+        this.stopAudio();
+        const ctx = this.ensureCtx();
+        this.master = ctx.createGain();
+        this.master.gain.value = 0.22;
+        this.master.connect(ctx.destination);
 
-      playing = {
-        name,
-        stop() {
-          cancelAnimationFrame(raf);
-          for (const s of sources) { try { s.stop(); } catch (_) {} }
-          try { master.disconnect(); } catch (_) {}
-          roll.render(null);
-          btn.textContent = "▶ Play notes";
-        },
-      };
+        const atCtx = ctx.currentTime + 0.06;
+        const audible = this.soloName
+          ? this.tracks.filter((t) => t.name === this.soloName)
+          : this.tracks.filter((t) => !this.muted.has(t.name));
+        // Quieter per-voice when many stems sound at once so the sum doesn't clip.
+        const gainScale = 1 / Math.sqrt(Math.max(1, audible.length));
+        for (const t of audible) this.scheduleStem(t, offset, atCtx, gainScale);
+
+        this.startCtxTime = atCtx;
+        this.startOffset = offset;
+        this.active = true;
+        els.playAll.textContent = "■ Stop";
+        this.refreshTrackBtns();   // now that active=true, solo btn shows ■ Stop
+        this.loop();
+      },
+
+      // Current song-time (seconds). While playing, derived from the audio clock.
+      now() {
+        if (!this.active) return this.pausedAt;
+        return this.startOffset + (this.ctx.currentTime - this.startCtxTime);
+      },
+
+      loop() {
+        cancelAnimationFrame(this.raf);
+        const step = () => {
+          const t = this.now();
+          if (t >= this.duration) { this.stop(); return; }
+          this.renderAll(t);
+          this.updateBar(t);
+          this.raf = requestAnimationFrame(step);
+        };
+        this.raf = requestAnimationFrame(step);
+      },
+
+      stopAudio() {
+        cancelAnimationFrame(this.raf); this.raf = 0;
+        for (const s of this.sources) { try { s.stop(); } catch (_) {} }
+        this.sources = [];
+        if (this.master) { try { this.master.disconnect(); } catch (_) {} this.master = null; }
+      },
+
+      // Stop playback, remembering where we stopped so Play resumes from there.
+      stop() {
+        this.pausedAt = Math.min(this.duration, Math.max(0, this.now()));
+        this.stopAudio();
+        this.active = false;
+        this.soloName = null;
+        els.playAll.textContent = "▶ Play song";
+        this.refreshTrackBtns();
+        this.renderAll(this.pausedAt);
+        this.updateBar(this.pausedAt);
+      },
+
+      // ▶ Play song / ■ Stop the full mix.
+      playAllToggle() {
+        if (this.active && !this.soloName) { this.stop(); return; }
+        this.soloName = null;
+        this.refreshTrackBtns();
+        const from = this.pausedAt >= this.duration - 0.05 ? 0 : this.pausedAt;
+        this.start(from);
+      },
+
+      // ▶ Solo one stem (mutes the rest); pressing the same stem's Solo stops it.
+      soloToggle(name) {
+        if (this.active && this.soloName === name) { this.stop(); return; }
+        this.soloName = name;
+        this.refreshTrackBtns();
+        const from = this.pausedAt >= this.duration - 0.05 ? 0 : this.pausedAt;
+        this.start(from);
+      },
+
+      // Toggle a stem in/out of the full-song mix (takes effect on next start; if the
+      // full mix is currently playing, reschedule live so the change is heard now).
+      muteToggle(name) {
+        if (this.muted.has(name)) this.muted.delete(name); else this.muted.add(name);
+        this.refreshTrackBtns();
+        if (this.active && !this.soloName) this.start(this.now());
+      },
+
+      // Seek to song-time `t`. A scrub gesture arrives as start→move…→end. While
+      // dragging we silence + freeze the transport (so the audio clock's rAF loop
+      // doesn't fight the dragged playhead), then on `end` resume from the new spot
+      // if we were playing when the drag began.
+      seek(t, phase) {
+        if (phase === "start") {
+          this.scrubResume = this.active ? (this.soloName ? { solo: this.soloName } : { all: true }) : null;
+          if (this.active) this.stopAudio();      // kill audio + its rAF; keep `active` off
+          this.active = false;
+        }
+        this.pausedAt = Math.max(0, Math.min(this.duration, t));
+        this.renderAll(this.pausedAt);
+        this.updateBar(this.pausedAt);
+        if (phase === "end") {
+          const r = this.scrubResume; this.scrubResume = null;
+          if (r) {
+            this.soloName = r.solo || null;
+            this.start(this.pausedAt);
+          }
+        }
+      },
+
+      renderAll(t) { for (const tr of this.tracks) tr.roll.render(t); },
+
+      updateBar(t) {
+        const frac = this.duration ? Math.max(0, Math.min(1, t / this.duration)) : 0;
+        els.scrubFill.style.width = (frac * 100) + "%";
+        els.scrubHead.style.left = (frac * 100) + "%";
+        els.scrubKnob.style.left = (frac * 100) + "%";
+        els.clock.textContent = fmtTime(t) + " / " + fmtTime(this.duration);
+      },
+
+      // Reflect solo/mute state on each stem's buttons + card outline.
+      refreshTrackBtns() {
+        for (const t of this.tracks) {
+          const soloed = this.soloName === t.name && this.active;
+          t.soloBtn.textContent = soloed ? "■ Stop" : "▶ Solo";
+          t.box.classList.toggle("solo", soloed);
+          const m = this.muted.has(t.name);
+          t.muteBtn.classList.toggle("muted", m);
+          t.muteBtn.textContent = m ? "Muted" : "Mute";
+        }
+      },
+
+      // Wipe everything when a new song is flipped.
+      reset() {
+        this.stopAudio();
+        this.active = false; this.soloName = null; this.pausedAt = 0;
+        this.tracks = []; this.muted.clear();
+        els.transport.style.display = "none";
+        els.playAll.textContent = "▶ Play song";
+      },
+    };
+
+    function resetTransport() { transport.reset(); }
+
+    function fmtTime(s) {
+      s = Math.max(0, Math.floor(s || 0));
+      return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
     }
+
+    // Transport bar: play/stop + scrub the whole song.
+    els.playAll.addEventListener("click", () => transport.playAllToggle());
+    (function wireScrubBar() {
+      const bar = els.scrub;
+      let dragging = false;
+      const timeAt = (clientX) => {
+        const r = bar.getBoundingClientRect();
+        const frac = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+        return frac * transport.duration;
+      };
+      bar.addEventListener("pointerdown", (e) => {
+        dragging = true; bar.setPointerCapture?.(e.pointerId);
+        transport.seek(timeAt(e.clientX), "start"); e.preventDefault();
+      });
+      bar.addEventListener("pointermove", (e) => { if (dragging) transport.seek(timeAt(e.clientX), "move"); });
+      bar.addEventListener("pointerup", (e) => { if (dragging) { dragging = false; transport.seek(timeAt(e.clientX), "end"); } });
+      bar.addEventListener("pointercancel", (e) => { if (dragging) { dragging = false; transport.seek(timeAt(e.clientX), "end"); } });
+    })();
   </script>
 </body>
 </html>
