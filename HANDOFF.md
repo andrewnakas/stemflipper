@@ -168,9 +168,19 @@
   WORSE (grid error 13.7→23.6 ms) because the beat grid started 10-23 ms late; phase correction flipped
   it to a clear win — on real fixture bass, onset JITTER halved (10.1→5.5 ms) and inter-onset gaps
   landing on 16th-note multiples went 22%→96%. Tests: `tests/test_quantize.py` (9 cases incl. the
-  systematic-lag scenario). **74 fast tests green** (was 65; +9). Pushed to main. **⚠️ SPACE NOT YET
-  REDEPLOYED** — this is a BACKEND change; it only affects live output after
-  `.venv/bin/python scripts/deploy_space.py` (heavy ~8-min rebuild). Batched for user go-ahead.
+  systematic-lag scenario). **74 fast tests green** (was 65; +9). Pushed to main. **DEPLOYED LIVE** —
+  user chose "deploy now"; `deploy_space.py` uploaded (create_repo still 402/PRO, uploads direct),
+  Space rebuilt to RUNNING in ~90 s (Python-only change, cached deps). Quantization now live.
+- **2026-07-14 (Opus, loop iter 3 — note cleanup):** New `stemflipper/cleanup.py` runs a pre-quantize
+  cleanup chain per stem: `dedup_notes` (collapse same-pitch onsets within 45 ms → one, keep louder
+  vel + later end), `merge_stutter` (join same-pitch notes with <60 ms gaps → one held note),
+  `smooth_velocity` (rolling median over same-pitch runs). Pipeline calls `cleanup.clean_notes()`
+  BEFORE `quantize.quantize_notes()` (both best-effort try/except). Fail-safe: cleans artifacts without
+  touching clean input — on the synthetic fixture, note counts held (bass 24→24, drums 63→63, correct:
+  no artifacts to remove) while velocity jitter dropped (bass 0.7→0.3, drums 3.0→2.2); the dedup/merge
+  paths are covered by `tests/test_cleanup.py` against synthetic ghosts/stutter. **83 fast tests green**
+  (was 74; +9). USER PREF GOING FORWARD: batch Space redeploys (approved "deploy now" for iter 2, batch
+  future). iter 3 pushed to main; Space redeploy batched with the next backend iter.
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.

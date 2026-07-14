@@ -9,6 +9,7 @@ from pathlib import Path
 from . import (
     analyze,
     audio_io,
+    cleanup,
     effects,
     export,
     quantize,
@@ -97,16 +98,21 @@ def run_pipeline(
             )
             character = router.escalate_polyphony(character, result["notes"], name)
 
-        # Snap note onsets to the tempo grid so the MIDI/piano-roll read tight instead
-        # of jittery. Best-effort: a no-op when the beat grid is unusable, and the
-        # tolerance leaves genuinely off-grid notes alone. (See quantize.py.)
-        if result["notes"] and analysis.beat_times:
+        # Clean the note set (dedup ghosts, merge stutter, smooth velocity) THEN snap
+        # onsets to the tempo grid — both best-effort so cleanup never breaks a stem
+        # (Invariant #7). Cleanup first so quantize snaps a de-artifacted set.
+        if result["notes"]:
             try:
-                result["notes"] = quantize.quantize_notes(
-                    result["notes"], analysis.beat_times, analysis.duration
-                )
+                result["notes"] = cleanup.clean_notes(result["notes"])
             except Exception:
-                pass  # never let cleanup break a stem (Invariant #7)
+                pass
+            if analysis.beat_times:
+                try:
+                    result["notes"] = quantize.quantize_notes(
+                        result["notes"], analysis.beat_times, analysis.duration
+                    )
+                except Exception:
+                    pass
 
         tracks[name] = result
         characters[name] = character
