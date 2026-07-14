@@ -156,6 +156,21 @@
   computed in analyze.py, unused for quantization — biggest "feels like a DAW" win); dedup/merge stutter
   notes; velocity median-smoothing; [drums] lower onset delta 0.05→0.03 + velocity gate; [synthfit]
   clamp attack ≤80ms. Backend changes need `pytest -m "not slow"` green + a match-rate non-regression.
+- **2026-07-14 (Opus, loop iter 2 — tempo-grid quantization):** New `stemflipper/quantize.py` snaps
+  transcribed note ONSETS to a subdivided beat grid (16th by default) so exported MIDI/DAWproject +
+  the piano-roll read tight, not jittery. Pipeline calls `quantize.quantize_notes(notes, beat_times,
+  duration)` per stem right after transcription (best-effort try/except, Invariant #7). KEY DESIGN:
+  the grid is de-lagged — `_phase_offset()` removes librosa's systematic beat-tracker lag (~10-30 ms)
+  by shifting the grid by the circular-median residual of the notes themselves, so we snap out random
+  jitter WITHOUT adding the tracker's constant offset to already-tight notes. Tolerance leaves
+  genuinely off-grid notes alone; durations preserved (start+end shift together); min-len + past-end
+  clamps. **Verification caught a real bug:** first pass (no phase correction) made the fixture bass
+  WORSE (grid error 13.7→23.6 ms) because the beat grid started 10-23 ms late; phase correction flipped
+  it to a clear win — on real fixture bass, onset JITTER halved (10.1→5.5 ms) and inter-onset gaps
+  landing on 16th-note multiples went 22%→96%. Tests: `tests/test_quantize.py` (9 cases incl. the
+  systematic-lag scenario). **74 fast tests green** (was 65; +9). Pushed to main. **⚠️ SPACE NOT YET
+  REDEPLOYED** — this is a BACKEND change; it only affects live output after
+  `.venv/bin/python scripts/deploy_space.py` (heavy ~8-min rebuild). Batched for user go-ahead.
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.

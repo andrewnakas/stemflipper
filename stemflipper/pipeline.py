@@ -11,6 +11,7 @@ from . import (
     audio_io,
     effects,
     export,
+    quantize,
     router,
     sampler,
     separate,
@@ -95,6 +96,17 @@ def run_pipeline(
                 name, stem_paths[name], is_keys=character.is_keys
             )
             character = router.escalate_polyphony(character, result["notes"], name)
+
+        # Snap note onsets to the tempo grid so the MIDI/piano-roll read tight instead
+        # of jittery. Best-effort: a no-op when the beat grid is unusable, and the
+        # tolerance leaves genuinely off-grid notes alone. (See quantize.py.)
+        if result["notes"] and analysis.beat_times:
+            try:
+                result["notes"] = quantize.quantize_notes(
+                    result["notes"], analysis.beat_times, analysis.duration
+                )
+            except Exception:
+                pass  # never let cleanup break a stem (Invariant #7)
 
         tracks[name] = result
         characters[name] = character
