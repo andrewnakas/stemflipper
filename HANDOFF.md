@@ -181,6 +181,22 @@
   paths are covered by `tests/test_cleanup.py` against synthetic ghosts/stutter. **83 fast tests green**
   (was 74; +9). USER PREF GOING FORWARD: batch Space redeploys (approved "deploy now" for iter 2, batch
   future). iter 3 pushed to main; Space redeploy batched with the next backend iter.
+- **2026-07-14 (Opus, loop iter 4 — mix bus: reverb + compressor):** Made the whole-song playback sound
+  cohesive/produced (`web/index.html`, client-only → Pages, no Space rebuild). New master chain in
+  `transport.start()`: sum → gain(0.3) → DynamicsCompressor (thr -14, ratio 3, 4ms atk / 180ms rel) →
+  destination, with a parallel reverb SEND (gain 0.14 → ConvolverNode). `transport.reverbIR()` builds a
+  cached synthetic 1.6 s decaying-noise stereo IR (no external asset — CSP-safe). The compressor glues
+  the mix and is a smarter clip guard than the raw 1/sqrt(n) attenuation. `stopAudio()` tears down the
+  new `_chain` nodes. Verified in real Chrome (CDP), zero exceptions: during play `_chain`=3 nodes +
+  139 sources; after stop chain/master null (no leak); OfflineAudioContext render of one note → peak
+  0.315 (no clip) with reverb TAIL energy 0.07 persisting 0.5-1.5 s AFTER the note ends (send works);
+  IR is 2-channel + decaying. **REJECTED iter-4-as-planned (drum onset tuning):** investigated the
+  survey's delta 0.05→0.03 + velocity-gate idea — measured it on the fixture AND a synthetic soft-hat
+  signal; it detected ZERO extra hats (librosa onset_detect isn't the bottleneck) and the gate only
+  removed notes; a centroid hat-classifier tiebreak fixed hats (0.50→0.75) but destroyed snares
+  (1.00→0.00). Net: no verifiable improvement → not shipped (honest-verification principle; drums are a
+  documented weakness, real fix is an ADT model blocked on NC licensing). 83 fast tests still green
+  (no backend change this iter). iter 4 pushed to main (Pages).
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.

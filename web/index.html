@@ -541,6 +541,8 @@
       pausedAt: 0,         // song-time to show/seek from when not playing
       scrubResume: null,   // what to resume after a scrub drag ({all} | {solo} | null)
       master: null,
+      _chain: null,        // [compressor, reverbSend, convolver] to disconnect on stop
+      _ir: null,           // cached synthetic reverb impulse response
       sources: [],
       raf: 0,
 
@@ -667,13 +669,45 @@
         }
       },
 
+      // A short synthetic reverb impulse (decaying, slightly diffused noise). Cached on
+      // the ctx so we build it once. Gives the dry blips a sense of shared space so the
+      // reconstructed song sounds cohesive rather than like isolated test tones.
+      reverbIR() {
+        if (this._ir) return this._ir;
+        const ctx = this.ctx, sr = ctx.sampleRate, len = Math.floor(sr * 1.6);
+        const buf = ctx.createBuffer(2, len, sr);
+        for (let ch = 0; ch < 2; ch++) {
+          const d = buf.getChannelData(ch);
+          for (let i = 0; i < len; i++) {
+            const t = i / len;
+            // early build-up then exponential decay; stereo-decorrelated noise
+            d[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 2.5) * Math.min(1, t * 40);
+          }
+        }
+        this._ir = buf;
+        return buf;
+      },
+
       // Start (or restart) audio from song-time `offset`. Respects solo/mute state.
       start(offset) {
         this.stopAudio();
         const ctx = this.ensureCtx();
+
+        // Master chain: sum -> gain -> compressor/limiter -> destination, with a
+        // parallel reverb send. The compressor glues the mix and stops the summed
+        // stems from clipping (a smarter safety net than raw 1/sqrt(n) attenuation).
         this.master = ctx.createGain();
-        this.master.gain.value = 0.22;
-        this.master.connect(ctx.destination);
+        this.master.gain.value = 0.3;
+        const comp = ctx.createDynamicsCompressor();
+        comp.threshold.value = -14; comp.knee.value = 20; comp.ratio.value = 3;
+        comp.attack.value = 0.004; comp.release.value = 0.18;
+        this.master.connect(comp);
+        // reverb send (subtle — keeps clarity but adds space)
+        const send = ctx.createGain(); send.gain.value = 0.14;
+        const verb = ctx.createConvolver(); verb.buffer = this.reverbIR();
+        this.master.connect(send); send.connect(verb); verb.connect(comp);
+        comp.connect(ctx.destination);
+        this._chain = [comp, send, verb];
 
         const atCtx = ctx.currentTime + 0.06;
         const audible = this.soloName
@@ -714,6 +748,8 @@
         for (const s of this.sources) { try { s.stop(); } catch (_) {} }
         this.sources = [];
         if (this.master) { try { this.master.disconnect(); } catch (_) {} this.master = null; }
+        for (const n of this._chain || []) { try { n.disconnect(); } catch (_) {} }
+        this._chain = null;
       },
 
       // Stop playback, remembering where we stopped so Play resumes from there.
