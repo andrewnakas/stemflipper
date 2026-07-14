@@ -77,6 +77,32 @@ def test_smooth_velocity_leaves_short_runs():
     assert {n["velocity"] for n in out} == {80, 120}
 
 
+def test_drop_blips_removes_short_notes():
+    notes = [
+        {"pitch": 60, "start": 0.0, "end": 0.01, "velocity": 90},   # 10ms blip -> gone
+        {"pitch": 60, "start": 0.5, "end": 0.53, "velocity": 90},   # 30ms -> gone (<35)
+        {"pitch": 60, "start": 1.0, "end": 1.20, "velocity": 90},   # 200ms -> kept
+    ]
+    out = cleanup.drop_blips(notes)
+    assert len(out) == 1
+    assert abs(out[0]["start"] - 1.0) < 1e-9
+
+
+def test_drop_blips_keeps_exactly_threshold():
+    notes = [{"pitch": 60, "start": 0.0, "end": 0.035, "velocity": 90}]  # exactly 35ms
+    assert len(cleanup.drop_blips(notes)) == 1  # >= floor is kept
+
+
+def test_clean_notes_drums_exempt_from_blip_drop():
+    # short percussive hits (40ms end-start typical) must survive on drum stems
+    drum = [{"pitch": 42, "start": t, "end": t + 0.02, "velocity": 90} for t in (0.0, 0.5, 1.0)]
+    kept_drum = cleanup.clean_notes(drum, is_drum=True)
+    assert len(kept_drum) == 3, "drum hits must not be blip-dropped"
+    # the same short notes on a pitched stem WOULD be dropped
+    kept_pitched = cleanup.clean_notes(drum, is_drum=False)
+    assert len(kept_pitched) == 0
+
+
 def test_clean_notes_chain_is_fail_safe():
     assert cleanup.clean_notes([]) == []
     one = [{"pitch": 60, "start": 0.0, "end": 0.5, "velocity": 100}]

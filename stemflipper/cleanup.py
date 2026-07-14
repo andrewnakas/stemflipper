@@ -20,6 +20,9 @@ _DEDUP_S = 0.045
 # A same-pitch gap shorter than this between a note's end and the next's start is a
 # stutter of one held note -> merge them.
 _MERGE_GAP_S = 0.06
+# Notes shorter than this (after merging) are spurious "blips" — below the length of a
+# real played note (basic-pitch's own minimum_note_length default is ~58 ms). Dropped.
+_MIN_LEN_S = 0.035
 
 
 def dedup_notes(notes: list[dict], tol_s: float = _DEDUP_S) -> list[dict]:
@@ -87,15 +90,28 @@ def smooth_velocity(notes: list[dict], kernel: int = 3) -> list[dict]:
     return ordered
 
 
+def drop_blips(notes: list[dict], min_len_s: float = _MIN_LEN_S) -> list[dict]:
+    """Drop notes shorter than min_len_s — spurious sub-note blips basic-pitch emits.
+    Runs AFTER merge so a stutter-fragment that got joined into a real note survives;
+    only genuinely isolated ultra-short notes are removed. Drums are exempt (percussive
+    hits are legitimately short); the caller passes only pitched stems, or gates on it."""
+    if not notes:
+        return notes
+    return [n for n in notes if (n["end"] - n["start"]) >= min_len_s]
+
+
 def clean_notes(
     notes: list[dict],
     *,
     dedup: bool = True,
     merge: bool = True,
     smooth: bool = True,
+    drop_short: bool = True,
+    is_drum: bool = False,
 ) -> list[dict]:
-    """Run the cleanup chain (dedup -> merge stutter -> smooth velocity) and return a
-    time-sorted list. Any step can be disabled. Fail-safe: empty in -> empty out."""
+    """Run the cleanup chain (dedup -> merge stutter -> drop blips -> smooth velocity)
+    and return a time-sorted list. Any step can be disabled. Blip-dropping is skipped for
+    drums (percussive hits are legitimately short). Fail-safe: empty in -> empty out."""
     if not notes:
         return notes
     out = [dict(n) for n in notes]
@@ -103,6 +119,8 @@ def clean_notes(
         out = dedup_notes(out)
     if merge:
         out = merge_stutter(out)
+    if drop_short and not is_drum:
+        out = drop_blips(out)
     if smooth:
         out = smooth_velocity(out)
     out.sort(key=lambda n: (n["start"], n["pitch"]))

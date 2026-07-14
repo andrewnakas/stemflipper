@@ -262,6 +262,18 @@
   hard-right → L 0.0 / R 13050; center → L/R ratio 1.03 (balanced); live pan stores -0.5 + writes the
   panner while playback continues; panners cleared after stop. Since export reuses buildMix, the WAV
   captures the pan too. 87 fast tests green (no backend change). iter 10 pushed to main (Pages).
+- **2026-07-14 (Opus, loop iter 11 — note-length floor / blip removal):** Swung back to DETECTION. Added
+  `cleanup.drop_blips()` — drops pitched notes shorter than 35 ms (spurious sub-note blips; basic-pitch's
+  own minimum_note_length default is ~58 ms). Runs in `clean_notes` AFTER merge (so a stutter-fragment
+  joined into a real note survives) and is SKIPPED for drums (percussive hits are legitimately short) via
+  a new `is_drum` kwarg; pipeline passes `result["is_drum"]`. **Honest verification note:** the synthetic
+  fixture has NO short blips (min note 383 ms), so I could NOT demonstrate the benefit on it — instead I
+  verified (a) the REMOVAL directly with constructed sub-35 ms notes, (b) the drum EXEMPTION (20 ms drum
+  hits survive, same notes on a pitched stem are dropped), and (c) NON-REGRESSION: real fixture bass
+  24→24 notes unchanged (blip-drop is a correct no-op on clean audio). This is the same discipline that
+  made me REJECT iter-4's drum tuning — ship only what's verifiable. `tests/test_cleanup.py` +3 (removal,
+  threshold boundary, drum-exempt). **90 fast tests green** (was 87; +3). BACKEND change — batched for
+  Space redeploy. iter 11 pushed to main.
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.

@@ -98,12 +98,15 @@ def run_pipeline(
             )
             character = router.escalate_polyphony(character, result["notes"], name)
 
-        # Clean the note set (dedup ghosts, merge stutter, smooth velocity) THEN snap
-        # onsets to the tempo grid — both best-effort so cleanup never breaks a stem
-        # (Invariant #7). Cleanup first so quantize snaps a de-artifacted set.
+        # Clean the note set (dedup ghosts, merge stutter, drop blips, smooth velocity)
+        # THEN snap onsets to the tempo grid — both best-effort so cleanup never breaks a
+        # stem (Invariant #7). Cleanup first so quantize snaps a de-artifacted set. Drums
+        # skip blip-dropping (percussive hits are legitimately short).
         if result["notes"]:
             try:
-                result["notes"] = cleanup.clean_notes(result["notes"])
+                result["notes"] = cleanup.clean_notes(
+                    result["notes"], is_drum=result.get("is_drum", False)
+                )
             except Exception:
                 pass
             if analysis.beat_times:
