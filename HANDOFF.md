@@ -129,6 +129,33 @@
   returns `{canvas, render, dur}`. Browser-verified: Play → "■ Stop" + rAF ~61fps + playhead animates
   + zero console errors; Stop resets. NEXT loop candidates (user picks): Ableton `.als` (risky —
   proprietary), inline-RPP-MIDI (risky — needs Reaper to validate), or web polish/hardening.
+- **2026-07-14 (Opus, piano-roll transport):** Reworked the web player around a SHARED TRANSPORT so
+  the reconstruction plays as a SONG and is SCRUBBABLE (user: "make the piano roll better UX, a scrub
+  wheel, play whatever reconstructed song together"). `web/index.html` only. New: master transport bar
+  (▶ Play song / ■ Stop plays EVERY stem's notes at once on one AudioContext timeline; all rolls'
+  playheads animate in sync from one rAF loop; per-voice gain 1/sqrt(n) anti-clip), a scrub wheel
+  (draggable knob + fill + m:ss clock; dragging any roll canvas also scrubs — seek freezes the
+  audio-driven render mid-drag then reschedules from the release point), and per-stem ▶ Solo (plays
+  one, mutes rest) + Mute (drops a stem from the mix, live-reschedules). `makePianoRoll` now returns
+  `{canvas, render, dur, timeAtX}`; `transport` object owns all playback state. Verified in TWO
+  independent real-Chrome drivers (Puppeteer + raw CDP), zero JS errors: clock advances, playheads
+  sync across 3 rolls, scrub (bar+canvas) seeks, drag-while-playing resumes, mute 76→36 sources, solo
+  btn flips to ■ Stop. 65 fast tests green (no backend change). Pushed to main → Pages redeploys.
+  **NOW LOOPING** (user /loop): improve algorithm/detection/synth so it feels like a music-production
+  app. Iteration backlog seeded below.
+- **2026-07-14 (Opus, loop iter 1 — playback synth):** Rebuilt the piano-roll's WebAudio voices so
+  playback sounds like instruments, not buzzers (`web/index.html` only). PITCHED: two ~8-cent-detuned
+  saws → a per-note LOWPASS whose cutoff sweeps (bright attack → settle) via an envelope, cutoff+Q
+  velocity-mapped (harder = brighter), proper ADSR amp (8ms atk / 60ms dec / 80% sus / release to note
+  end). DRUMS: new `transport.playDrum()` synthesizes real voices — KICK = pitch-swept sine body
+  150→50 Hz + highpassed noise click; SNARE = bandpassed-noise crack + ~185 Hz triangle ring; HAT =
+  short highpassed noise; velocity drives loudness AND decay length. Verified in headless Chrome via
+  CDP: solo-drums 67 sources / full-mix 139 / melody 2-osc-per-note, ZERO exceptions; OfflineAudioContext
+  render of a loud kick → peak 1.14, early energy 242.8 ≫ late 0.45 (punchy, decays). 65 fast tests
+  green. NEXT backlog (from survey, ranked): [detection] snap notes to tempo grid (beat_times already
+  computed in analyze.py, unused for quantization — biggest "feels like a DAW" win); dedup/merge stutter
+  notes; velocity median-smoothing; [drums] lower onset delta 0.05→0.03 + velocity gate; [synthfit]
+  clamp attack ≤80ms. Backend changes need `pytest -m "not slow"` green + a match-rate non-regression.
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.

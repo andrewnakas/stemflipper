@@ -560,6 +560,67 @@
         this.updateBar(0);
       },
 
+      // Synthesize one drum hit at ctx-time `on`. `vv` is 0..1 velocity, which drives
+      // both loudness and decay length. Routes into the per-note `gain` → master.
+      // GM pitches we emit: 35/36 kick, 38/40 snare, 42/46 hat (others → snare-ish).
+      playDrum(pitch, on, vv, gain, master) {
+        const ctx = this.ctx;
+        const noiseBuf = () => {
+          const b = ctx.createBuffer(1, 4096, ctx.sampleRate);
+          const d = b.getChannelData(0);
+          for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+          return b;
+        };
+        if (pitch <= 37) {
+          // KICK: pitch-swept sine body (≈150→50 Hz) + a tiny noise click transient.
+          const dur = 0.16 + vv * 0.12;
+          const body = ctx.createOscillator(); body.type = "sine";
+          body.frequency.setValueAtTime(150, on);
+          body.frequency.exponentialRampToValueAtTime(50, on + 0.08);
+          const bg = ctx.createGain();
+          bg.gain.setValueAtTime(vv, on);
+          bg.gain.exponentialRampToValueAtTime(0.0001, on + dur);
+          body.connect(bg); bg.connect(gain);
+          const click = ctx.createBufferSource(); click.buffer = noiseBuf();
+          const cf = ctx.createBiquadFilter(); cf.type = "highpass"; cf.frequency.value = 1500;
+          const cg = ctx.createGain();
+          cg.gain.setValueAtTime(vv * 0.35, on);
+          cg.gain.exponentialRampToValueAtTime(0.0001, on + 0.02);
+          click.connect(cf); cf.connect(cg); cg.connect(gain);
+          body.start(on); body.stop(on + dur + 0.02);
+          click.start(on); click.stop(on + 0.03);
+          this.sources.push(body, click);
+        } else if (pitch >= 42) {
+          // HAT: short highpassed noise; velocity shortens/lengthens the tick.
+          const dur = 0.03 + vv * 0.05;
+          const src = ctx.createBufferSource(); src.buffer = noiseBuf();
+          const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 7000;
+          gain.gain.setValueAtTime(vv * 0.6, on);
+          gain.gain.exponentialRampToValueAtTime(0.0001, on + dur);
+          src.connect(hp); hp.connect(gain);
+          src.start(on); src.stop(on + dur + 0.02);
+          this.sources.push(src);
+        } else {
+          // SNARE: bandpassed noise "crack" + a short tonal ring around ~185 Hz.
+          const dur = 0.12 + vv * 0.1;
+          const src = ctx.createBufferSource(); src.buffer = noiseBuf();
+          const bp = ctx.createBiquadFilter(); bp.type = "bandpass";
+          bp.frequency.value = 1800; bp.Q.value = 0.8;
+          const ng = ctx.createGain();
+          ng.gain.setValueAtTime(vv * 0.7, on);
+          ng.gain.exponentialRampToValueAtTime(0.0001, on + dur);
+          src.connect(bp); bp.connect(ng); ng.connect(gain);
+          const ring = ctx.createOscillator(); ring.type = "triangle"; ring.frequency.value = 185;
+          const rg = ctx.createGain();
+          rg.gain.setValueAtTime(vv * 0.4, on);
+          rg.gain.exponentialRampToValueAtTime(0.0001, on + 0.07);
+          ring.connect(rg); rg.connect(gain);
+          src.start(on); src.stop(on + dur + 0.02);
+          ring.start(on); ring.stop(on + 0.09);
+          this.sources.push(src, ring);
+        }
+      },
+
       // Schedule the WebAudio notes for one stem, starting the song at `offset` seconds.
       // atCtx = audioCtx.currentTime that song-time `offset` maps to.
       scheduleStem(track, offset, atCtx, gainScale) {
@@ -569,31 +630,39 @@
           const on = atCtx + Math.max(0, start - offset);
           const off = atCtx + Math.max(start + 0.03, end) - offset;
           const gain = ctx.createGain();
-          const amp = Math.max(0.05, Math.min(1, vel / 127)) * gainScale;
+          const vv = Math.max(0, Math.min(1, vel / 127));        // 0..1 velocity
+          const amp = Math.max(0.05, vv) * gainScale;
           if (track.stem.is_drum) {
-            const buf = ctx.createBuffer(1, 2048, ctx.sampleRate);
-            const d = buf.getChannelData(0);
-            for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-            const src = ctx.createBufferSource(); src.buffer = buf;
-            const bp = ctx.createBiquadFilter();
-            bp.type = "bandpass";
-            bp.frequency.value = pitch <= 38 ? 120 : pitch >= 42 ? 8000 : 2000;  // kick/hat/snare
-            gain.gain.setValueAtTime(amp, on);
-            gain.gain.exponentialRampToValueAtTime(0.001, on + 0.18);
-            src.connect(bp); bp.connect(gain); gain.connect(master);
-            src.start(on); src.stop(on + 0.2);
-            this.sources.push(src);
+            // Synthesized drum voices (velocity drives loudness + decay length) — a
+            // real kick/snare/hat character, not one bandpassed noise burst for all.
+            this.playDrum(pitch, on, vv, gain, master);
+            gain.connect(master);
           } else {
-            const osc = ctx.createOscillator();
-            osc.type = "sawtooth";
-            osc.frequency.value = 440 * Math.pow(2, (pitch - 69) / 12);
+            // Subtractive synth voice: two slightly-detuned saws → a per-note lowpass
+            // whose cutoff sweeps with an envelope (the classic "pluck"), plus an ADSR
+            // on the amp. Velocity opens the filter (harder = brighter), like a real synth.
+            const f0 = 440 * Math.pow(2, (pitch - 69) / 12);
+            const oscA = ctx.createOscillator(); oscA.type = "sawtooth"; oscA.frequency.value = f0;
+            const oscB = ctx.createOscillator(); oscB.type = "sawtooth";
+            oscB.frequency.value = f0; oscB.detune.value = 8;   // ~8 cents → chorusy warmth
+            const lp = ctx.createBiquadFilter(); lp.type = "lowpass";
+            lp.Q.value = 2 + vv * 4;                            // more resonance on hard hits
+            const base = 350 + vv * 900;                       // cutoff floor, velocity-scaled
+            const peak = Math.min(9000, base + 2500 + vv * 4000);  // brief bright attack
+            const sweepEnd = Math.min(off, on + 0.12);
+            lp.frequency.setValueAtTime(peak, on);
+            lp.frequency.exponentialRampToValueAtTime(Math.max(120, base), sweepEnd);
+            // ADSR amp (fast attack, short decay to ~80% sustain, release to the note end).
+            const atk = 0.008, dec = 0.06, sus = amp * 0.8;
             gain.gain.setValueAtTime(0, on);
-            gain.gain.linearRampToValueAtTime(amp, on + 0.01);
-            gain.gain.setValueAtTime(amp, Math.max(on + 0.02, off - 0.03));
-            gain.gain.linearRampToValueAtTime(0, off);
-            osc.connect(gain); gain.connect(master);
-            osc.start(on); osc.stop(off + 0.02);
-            this.sources.push(osc);
+            gain.gain.linearRampToValueAtTime(amp, on + atk);
+            gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, sus), on + atk + dec);
+            gain.gain.setValueAtTime(Math.max(0.0001, sus), Math.max(on + atk + dec, off - 0.04));
+            gain.gain.exponentialRampToValueAtTime(0.0001, off + 0.05);
+            oscA.connect(lp); oscB.connect(lp); lp.connect(gain); gain.connect(master);
+            oscA.start(on); oscB.start(on);
+            oscA.stop(off + 0.08); oscB.stop(off + 0.08);
+            this.sources.push(oscA, oscB);
           }
         }
       },
