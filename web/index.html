@@ -74,6 +74,7 @@
     .mutebtn:hover { border-color: var(--accent); color: var(--ink); }
     .mutebtn.muted { color: var(--err); border-color: var(--err); opacity: .85; }
     input.vol { width: 74px; accent-color: var(--accent2); cursor: pointer; margin: 0; }
+    input.pan { width: 52px; accent-color: var(--accent); cursor: pointer; margin: 0; }
     audio { width: 100%; margin-top: 6px; }
     canvas.roll { width: 100%; margin-top: 8px; border-radius: 8px; display: block; cursor: ew-resize; touch-action: none; }
 
@@ -416,15 +417,20 @@
             mute.className = "mutebtn";
             mute.textContent = "Mute";
             mute.onclick = () => transport.muteToggle(name);
-            // Per-stem volume fader (0–100%), like a mixer channel.
+            // Per-stem pan (L↔R) and volume fader (0–100%), like a mixer channel.
+            const pan = document.createElement("input");
+            pan.type = "range"; pan.min = "-100"; pan.max = "100"; pan.value = "0";
+            pan.className = "pan"; pan.title = "Pan (L↔R)";
+            pan.oninput = () => transport.setPan(name, pan.value / 100);
             const vol = document.createElement("input");
             vol.type = "range"; vol.min = "0"; vol.max = "100"; vol.value = "100";
             vol.className = "vol"; vol.title = "Volume";
             vol.oninput = () => transport.setVolume(name, vol.value / 100);
+            ctrl.appendChild(pan);
             ctrl.appendChild(vol);
             ctrl.appendChild(solo);
             ctrl.appendChild(mute);
-            transport.addTrack({ name, stem: stemNotes, roll, box, soloBtn: solo, muteBtn: mute, volume: 1 });
+            transport.addTrack({ name, stem: stemNotes, roll, box, soloBtn: solo, muteBtn: mute, volume: 1, pan: 0 });
           }
           els.stems.appendChild(box);
         });
@@ -755,9 +761,12 @@
         for (const t of audible) {
           const bus = ctx.createGain();
           bus.gain.value = t.volume == null ? 1 : t.volume;
-          bus.connect(master);
+          // Per-stem stereo pan: notes -> bus (volume) -> panner -> master.
+          const pan = ctx.createStereoPanner();
+          pan.pan.value = t.pan == null ? 0 : t.pan;      // -1 L .. +1 R
+          bus.connect(pan); pan.connect(master);
           this.scheduleStem(t, offset, atCtx, gainScale, bus);
-          buses.push({ track: t, bus });
+          buses.push({ track: t, bus, pan });
         }
         return { master, comp, send, verb, buses };
       },
@@ -789,7 +798,7 @@
         const mix = this.buildMix(ctx, ctx.destination, offset, atCtx);
         this.master = mix.master;
         this._chain = [mix.comp, mix.send, mix.verb];
-        for (const b of mix.buses) b.track._bus = b.bus;   // live volume faders
+        for (const b of mix.buses) { b.track._bus = b.bus; b.track._pan = b.pan; }   // live fader + pan
 
         this.startCtxTime = atCtx;
         this.startOffset = offset;
@@ -824,7 +833,10 @@
         if (this.master) { try { this.master.disconnect(); } catch (_) {} this.master = null; }
         for (const n of this._chain || []) { try { n.disconnect(); } catch (_) {} }
         this._chain = null;
-        for (const t of this.tracks) { if (t._bus) { try { t._bus.disconnect(); } catch (_) {} t._bus = null; } }
+        for (const t of this.tracks) {
+          if (t._bus) { try { t._bus.disconnect(); } catch (_) {} t._bus = null; }
+          if (t._pan) { try { t._pan.disconnect(); } catch (_) {} t._pan = null; }
+        }
       },
 
       // Stop playback, remembering where we stopped so Play resumes from there.
@@ -873,6 +885,16 @@
         t.volume = Math.max(0, Math.min(1, v));
         if (t._bus && this.ctx) {
           t._bus.gain.setTargetAtTime(t.volume, this.ctx.currentTime, 0.01);
+        }
+      },
+
+      // Set a stem's stereo pan (-1 L .. +1 R). Live-adjustable via its panner node.
+      setPan(name, p) {
+        const t = this.tracks.find((x) => x.name === name);
+        if (!t) return;
+        t.pan = Math.max(-1, Math.min(1, p));
+        if (t._pan && this.ctx) {
+          t._pan.pan.setTargetAtTime(t.pan, this.ctx.currentTime, 0.01);
         }
       },
 

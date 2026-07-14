@@ -254,6 +254,14 @@
   peak 0.626, non-silent; live ctx restored + replays after render; WAV header valid (RIFF/WAVE/fmt/data,
   2ch/16bit/44.1k, exact byte length, audio/wav). 87 fast tests green (no backend change). iter 9 pushed
   to main (Pages).
+- **2026-07-14 (Opus, loop iter 10 — per-stem stereo pan):** Last core mixer control — each stem gets a
+  pan slider (L↔R) alongside its volume fader (`web/index.html`, client-only → Pages). `buildMix` routes
+  each stem notes → bus (volume) → StereoPannerNode → master; `transport.setPan(name, p)` (-1..+1) writes
+  the live panner via setTargetAtTime; `stopAudio` disconnects/nulls `t._pan`. Verified in real Chrome by
+  measuring the OFFLINE-RENDERED waveform's channel energy, zero exceptions: hard-left → L 13030 / R 0.0;
+  hard-right → L 0.0 / R 13050; center → L/R ratio 1.03 (balanced); live pan stores -0.5 + writes the
+  panner while playback continues; panners cleared after stop. Since export reuses buildMix, the WAV
+  captures the pan too. 87 fast tests green (no backend change). iter 10 pushed to main (Pages).
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
