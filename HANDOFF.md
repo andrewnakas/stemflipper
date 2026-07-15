@@ -273,7 +273,18 @@
   24→24 notes unchanged (blip-drop is a correct no-op on clean audio). This is the same discipline that
   made me REJECT iter-4's drum tuning — ship only what's verifiable. `tests/test_cleanup.py` +3 (removal,
   threshold boundary, drum-exempt). **90 fast tests green** (was 87; +3). BACKEND change — batched for
-  Space redeploy. iter 11 pushed to main.
+  Space redeploy. iter 11 pushed to main. **DEPLOYED** (user-approved): Space rebuilt RUNNING (~45 s);
+  blip-removal now live.
+- **2026-07-14 (Opus, loop iter 12 — loop-region playback):** Select a section and loop it — a practice/
+  audition feature (`web/index.html`, client-only → Pages). Shift-drag the scrub bar sets a loop region
+  [A,B] (normal drag still scrubs); a ⟲ Loop button toggles it; the region highlights on the bar. In the
+  rAF `loop()` step, when playing past `loopB` (or past duration with a loop set), `start(loopA)` wraps
+  playback back. State: `loopA/loopB/looping`; methods `setLoop`/`toggleLooping`/`updateLoopUI`; `reset()`
+  clears it. Verified in real Chrome (CDP), zero exceptions: setLoop(3,6) → region at 25%/25% + armed;
+  toggle off/on tracks button; a 20 ms stray region is NOT armed; the WRAP logic calls start(loopA=3)
+  exactly when now()≥loopB (drove it directly since headless doesn't advance the audio clock); live
+  playback runs with the loop armed. 90 fast tests green (no backend change). iter 12 pushed to main
+  (Pages).
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.

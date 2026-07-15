@@ -114,6 +114,17 @@
     }
     .transport .dlmix:hover { border-color: var(--accent2); }
     .transport .dlmix:disabled { opacity: .6; cursor: progress; }
+    .transport .loopbtn {
+      background: var(--panel); color: var(--muted); border: 1px solid var(--line);
+      border-radius: 8px; padding: 7px 12px; font-size: 13px; cursor: pointer; white-space: nowrap;
+    }
+    .transport .loopbtn:hover { border-color: var(--accent); color: var(--ink); }
+    .transport .loopbtn.on { color: #1a1206; background: var(--accent); border-color: var(--accent); font-weight: 600; }
+    .transport .scrub .loopregion {
+      position: absolute; top: 0; bottom: 0; display: none;
+      background: rgba(255,180,84,.22); border-left: 1px solid var(--accent); border-right: 1px solid var(--accent);
+      pointer-events: none;
+    }
     .thint { color: var(--muted); font-size: 12px; margin-top: 8px; }
     .thint kbd {
       background: var(--panel); border: 1px solid var(--line); border-bottom-width: 2px;
@@ -156,15 +167,17 @@
 
       <div class="transport" id="transport" style="display:none">
         <button class="tplay" id="playAll">▶ Play song</button>
-        <div class="scrub" id="scrub" title="Drag to scrub through the whole song">
+        <div class="scrub" id="scrub" title="Drag to scrub · Shift-drag to set a loop region">
+          <div class="loopregion" id="loopRegion"></div>
           <div class="fill" id="scrubFill"></div>
           <div class="head" id="scrubHead"></div>
           <div class="knob" id="scrubKnob"></div>
         </div>
         <div class="tclock" id="clock">0:00 / 0:00</div>
+        <button class="loopbtn" id="loopBtn" title="Toggle looping (Shift-drag the bar to set a region)">⟲ Loop</button>
         <button class="dlmix" id="dlmix" title="Render the reconstruction to a WAV file">⬇︎ Mix</button>
       </div>
-      <div class="thint" id="thint">Drag the bar or any roll to scrub · <kbd>Space</kbd> play/pause · <kbd>←</kbd><kbd>→</kbd> nudge (<kbd>Shift</kbd> = 5s)</div>
+      <div class="thint" id="thint">Drag to scrub · <kbd>Shift</kbd>-drag = loop region · <kbd>Space</kbd> play/pause · <kbd>←</kbd><kbd>→</kbd> nudge (<kbd>Shift</kbd> = 5s)</div>
 
       <div class="stems" id="stems"></div>
     </div>
@@ -210,6 +223,8 @@
       scrubKnob: document.getElementById("scrubKnob"),
       clock: document.getElementById("clock"),
       dlmix: document.getElementById("dlmix"),
+      loopBtn: document.getElementById("loopBtn"),
+      loopRegion: document.getElementById("loopRegion"),
     };
 
     let chosen = null;
@@ -587,6 +602,7 @@
       startOffset: 0,      // song-time (s) that maps to startCtxTime
       pausedAt: 0,         // song-time to show/seek from when not playing
       scrubResume: null,   // what to resume after a scrub drag ({all} | {solo} | null)
+      loopA: null, loopB: null, looping: false,   // loop-region [a,b] seconds
       master: null,
       _chain: null,        // [compressor, reverbSend, convolver] to disconnect on stop
       _ir: null,           // cached synthetic reverb impulse response
@@ -818,12 +834,52 @@
         cancelAnimationFrame(this.raf);
         const step = () => {
           const t = this.now();
-          if (t >= this.duration) { this.stop(); return; }
+          // Loop region: when playing past the region end, jump back to its start.
+          if (this.looping && this.loopB != null && t >= this.loopB) {
+            this.start(this.loopA);
+            return;                    // start() re-arms the rAF loop
+          }
+          if (t >= this.duration) {
+            if (this.looping && this.loopA != null) { this.start(this.loopA); return; }
+            this.stop(); return;
+          }
           this.renderAll(t);
           this.updateBar(t);
           this.raf = requestAnimationFrame(step);
         };
         this.raf = requestAnimationFrame(step);
+      },
+
+      // Set / clear the loop region [a, b] (seconds). Clears when a==null.
+      setLoop(a, b) {
+        if (a == null) { this.loopA = this.loopB = null; this.looping = false; }
+        else {
+          this.loopA = Math.max(0, Math.min(a, b));
+          this.loopB = Math.min(this.duration, Math.max(a, b));
+          this.looping = this.loopB - this.loopA > 0.05;   // ignore a stray click
+        }
+        this.updateLoopUI();
+      },
+
+      toggleLooping() {
+        if (this.loopA == null) return;      // nothing to loop
+        this.looping = !this.looping;
+        this.updateLoopUI();
+      },
+
+      updateLoopUI() {
+        const on = this.looping && this.loopA != null;
+        els.loopBtn.classList.toggle("on", on);
+        els.loopBtn.textContent = on ? "⟲ Loop on" : "⟲ Loop";
+        if (this.loopA != null && this.duration) {
+          const l = (this.loopA / this.duration) * 100, w = ((this.loopB - this.loopA) / this.duration) * 100;
+          els.loopRegion.style.display = "block";
+          els.loopRegion.style.left = l + "%";
+          els.loopRegion.style.width = w + "%";
+          els.loopRegion.style.opacity = on ? "1" : "0.4";
+        } else {
+          els.loopRegion.style.display = "none";
+        }
       },
 
       stopAudio() {
@@ -961,6 +1017,9 @@
         this.stopAudio();
         this.active = false; this.soloName = null; this.pausedAt = 0;
         this.tracks = []; this.muted.clear();
+        this.loopA = this.loopB = null; this.looping = false;
+        els.loopRegion.style.display = "none"; els.loopBtn.classList.remove("on");
+        els.loopBtn.textContent = "⟲ Loop";
         els.transport.style.display = "none";
         els.playAll.textContent = "▶ Play song";
       },
@@ -1023,21 +1082,38 @@
     // Transport bar: play/stop + scrub the whole song.
     els.playAll.addEventListener("click", () => transport.playAllToggle());
     els.dlmix.addEventListener("click", downloadMix);
+    els.loopBtn.addEventListener("click", () => transport.toggleLooping());
     (function wireScrubBar() {
       const bar = els.scrub;
-      let dragging = false;
+      let dragging = false, marking = false, markStart = 0;
       const timeAt = (clientX) => {
         const r = bar.getBoundingClientRect();
         const frac = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
         return frac * transport.duration;
       };
       bar.addEventListener("pointerdown", (e) => {
-        dragging = true; bar.setPointerCapture?.(e.pointerId);
-        transport.seek(timeAt(e.clientX), "start"); e.preventDefault();
+        bar.setPointerCapture?.(e.pointerId); e.preventDefault();
+        if (e.shiftKey) {                 // Shift-drag → set a loop region
+          marking = true; markStart = timeAt(e.clientX);
+          transport.setLoop(markStart, markStart);
+        } else {                          // normal drag → scrub
+          dragging = true; transport.seek(timeAt(e.clientX), "start");
+        }
       });
-      bar.addEventListener("pointermove", (e) => { if (dragging) transport.seek(timeAt(e.clientX), "move"); });
-      bar.addEventListener("pointerup", (e) => { if (dragging) { dragging = false; transport.seek(timeAt(e.clientX), "end"); } });
-      bar.addEventListener("pointercancel", (e) => { if (dragging) { dragging = false; transport.seek(timeAt(e.clientX), "end"); } });
+      bar.addEventListener("pointermove", (e) => {
+        if (marking) transport.setLoop(markStart, timeAt(e.clientX));
+        else if (dragging) transport.seek(timeAt(e.clientX), "move");
+      });
+      const end = (e) => {
+        if (marking) {
+          marking = false;
+          transport.setLoop(markStart, timeAt(e.clientX));
+          transport.looping = transport.loopB - transport.loopA > 0.05;  // arm on release
+          transport.updateLoopUI();
+        } else if (dragging) { dragging = false; transport.seek(timeAt(e.clientX), "end"); }
+      };
+      bar.addEventListener("pointerup", end);
+      bar.addEventListener("pointercancel", end);
     })();
 
     // Keyboard transport (DAW muscle memory) — active once a result is on screen and
