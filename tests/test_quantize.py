@@ -138,3 +138,53 @@ def test_build_grid_covers_song():
     # spacing is a 16th at 120 BPM = 0.125s
     d = np.diff(grid)
     assert abs(float(np.median(d)) - 0.125) < 1e-3
+
+
+# --- Real-song robustness: conditions the fixture never exercises -------------
+
+def test_sparse_notes_still_snap():
+    """Phase estimate must work from very few notes (sparse passages). The snapped
+    onsets sit on ONE consistent (phase-corrected) grid — they share a sub-step phase —
+    even though that grid is offset from an absolute t=0 grid by the de-lag correction."""
+    beats = [round(0.015 + i * 0.5, 4) for i in range(12)]  # 120 BPM, +15ms lag
+    step = 0.125
+    messy = [
+        {"pitch": 60, "start": 0.03, "end": 0.33, "velocity": 100},
+        {"pitch": 60, "start": 0.98, "end": 1.28, "velocity": 100},
+        {"pitch": 60, "start": 2.525, "end": 2.8, "velocity": 100},
+    ]
+    out = quantize.quantize_notes(messy, beats, duration=4.0)
+    phases = [((n["start"] % step) + step) % step for n in out]
+    # all notes share the same phase within the step -> they're on one coherent grid
+    assert max(phases) - min(phases) < 1e-3, f"inconsistent grid phases: {phases}"
+    # and the gaps between them are near-integer multiples of the 16th step
+    starts = sorted(n["start"] for n in out)
+    for a, b in zip(starts, starts[1:]):
+        mult = (b - a) / step
+        assert abs(mult - round(mult)) < 0.05, f"gap {b - a} not a 16th multiple"
+
+
+def test_variable_tempo_snaps_to_local_beats():
+    """A drifting-tempo grid (accelerando) still snaps notes near their own beats —
+    the per-interval local grid handles drift; a single global step would not."""
+    drift, t, step = [], 0.0, 0.7
+    for _ in range(20):
+        drift.append(round(t, 4)); t += step; step *= 0.94   # 0.7s -> 0.23s beats
+    notes = [{"pitch": 60, "start": round(b + 0.02, 4), "end": round(b + 0.2, 4),
+              "velocity": 100} for b in drift[:16]]
+    out = quantize.quantize_notes(notes, drift, duration=t)
+    for n in out:
+        assert min(abs(n["start"] - b) for b in drift) < 0.03, "note not near any beat"
+
+
+def test_on_beat_notes_unmoved_under_strong_drift():
+    """Notes already sitting exactly on beats of a strongly-accelerating grid must not
+    be pushed off by the global phase correction."""
+    drift, t, step = [], 0.0, 0.7
+    for _ in range(20):
+        drift.append(round(t, 4)); t += step; step *= 0.94
+    on = [{"pitch": 60, "start": drift[i], "end": round(drift[i] + 0.2, 4),
+           "velocity": 100} for i in range(0, 16, 2)]
+    out = quantize.quantize_notes(on, drift, duration=t)
+    for a, b in zip(sorted(out, key=lambda n: n["start"]), on):
+        assert abs(a["start"] - b["start"]) < 0.005, "on-beat note moved"

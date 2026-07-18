@@ -303,6 +303,17 @@
   manufacture a change. Locked the sweep in as `test_recovery_is_robust_across_seeds` so a future
   threshold regression (leftover artifacts / eaten notes) is caught. TEST-ONLY. **94 fast tests green**
   (was 93; +1). iter 14 pushed.
+- **2026-07-14 (Opus, loop iter 15 — quantizer robustness on real-song conditions):** Stress-tested
+  `quantize`'s phase-correction on the inputs most likely to break it on real songs (the clean fixture
+  never exercises these). All held: SPARSE (3 notes) → snaps to one coherent grid; SINGLE note → aligns
+  to itself, no crash; VARIABLE TEMPO accelerando (beats 0.7s→0.23s, 3×) → notes snap within 30 ms of
+  their LOCAL beat (the per-interval grid handles drift; a global step would fail); STRONG-DRIFT on-beat
+  notes → moved 0.0 ms (global phase offset doesn't push them off); syncopated-on-16th → stays 0 ms
+  jitter (not wrongly dragged to beats); clean on-grid → 0.00 ms move (never degrades clean input). No
+  code change needed — locked 3 as regression guards in `test_quantize.py` (sparse, variable-tempo,
+  on-beat-under-drift). Caught + fixed a wrong TEST assertion en route (sparse notes sit on the
+  phase-corrected grid, not the absolute t=0 grid — assert shared sub-step phase + 16th-multiple gaps
+  instead). TEST-ONLY. **97 fast tests green** (was 94; +3). iter 15 pushed.
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
