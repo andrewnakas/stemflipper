@@ -285,6 +285,16 @@
   exactly when now()≥loopB (drove it directly since headless doesn't advance the audio clock); live
   playback runs with the loop armed. 90 fast tests green (no backend change). iter 12 pushed to main
   (Pages).
+- **2026-07-14 (Opus, loop iter 13 — end-to-end detection-cleanup verification):** Closed the gap that
+  kept blocking detection work: the synthetic audio fixture is too CLEAN to exercise real transcription
+  artifacts, so detection improvements couldn't be *measured*. New `tests/test_detection_pipeline.py`
+  starts from a known-clean 8th-note melody, corrupts it the way basic-pitch/librosa do (±40 ms onset
+  jitter, ±25 velocity noise, 25% ghost duplicates, 20% stutter fragments, 12.5% sub-note blips —
+  deterministic via seeded rng), then runs the REAL `clean_notes` + `quantize_notes` chain and asserts
+  recovery. Measured: 32 truth → 48 messy → **32 recovered**; grid tightness 4%→**100%**; onset jitter
+  19.9 ms→**0.0 ms**; blips 2→**0**. Also tests idempotence on clean input and corruption determinism.
+  This validates the iter-2/3/11 detection work end-to-end and is a regression guard for future tuning.
+  TEST-ONLY (no production change, no redeploy). **93 fast tests green** (was 90; +3). iter 13 pushed.
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
