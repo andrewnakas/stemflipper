@@ -57,6 +57,24 @@ def test_pipeline_with_stubbed_separation(fixture_song, tmp_path):
     assert manifest["stems"]["bass"]["n_notes"] > 0
 
 
+def test_pipeline_notes_json_carries_beat_grid(fixture_song, tmp_path):
+    """The client piano-roll draws its bar/beat timeline from notes.json's tempo/beats.
+    Guard that the real pipeline actually threads analysis.tempo/beat_times/time_signature
+    through write_notes() — a refactor dropping them would silently break the DAW grid."""
+    result = run_pipeline(
+        fixture_song["paths"]["mix"],
+        tmp_path / "out",
+        progress=lambda f, d: None,
+        separate_fn=_fake_separator(fixture_song),
+    )
+    notes = json.loads((result["bundle_dir"] / "notes.json").read_text())
+    assert notes.get("tempo") and 100 < notes["tempo"] < 140       # ~120 BPM fixture
+    assert len(notes.get("beats", [])) > 10                        # a real beat grid
+    assert notes.get("time_signature") == "4/4"
+    # and the per-stem notes survived cleanup+quantize (non-empty pitched stems)
+    assert notes["stems"]["bass"]["notes"], "bass notes missing from notes.json"
+
+
 def test_pipeline_emits_m5_effects_and_synthfit(fixture_song, tmp_path):
     """M5 wiring: every pitched stem gets an effects/*.json; the mono-synth 'other'
     stem (the fixture's sustained-saw lead) routes to synth-fit and gets a .vital.

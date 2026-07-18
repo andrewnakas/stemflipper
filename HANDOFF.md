@@ -314,6 +314,14 @@
   on-beat-under-drift). Caught + fixed a wrong TEST assertion en route (sparse notes sit on the
   phase-corrected grid, not the absolute t=0 grid — assert shared sub-step phase + 16th-multiple gaps
   instead). TEST-ONLY. **97 fast tests green** (was 94; +3). iter 15 pushed.
+- **2026-07-14 (Opus, loop iter 16 — pipeline guard for the beat-grid data path):** Found a real coverage
+  gap: `test_pipeline.py` asserted note COUNTS but never that iter-8's tempo/beats/time_signature actually
+  reach `notes.json` THROUGH the real pipeline — a refactor dropping them would silently break the piano-
+  roll's DAW timeline with no test failure. Verified end-to-end (stubbed separation on the fixture):
+  notes.json has tempo=120.19, beats=30, time_signature=4/4, per-stem notes present. Added
+  `test_pipeline_notes_json_carries_beat_grid` as the guard. TEST-ONLY (exercises the whole
+  analyze→transcribe→cleanup→quantize→write_notes chain, no htdemucs). **98 fast tests green** (was 97;
+  +1). iter 16 pushed.
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
