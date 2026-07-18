@@ -118,6 +118,29 @@ def test_cleanup_quantize_is_idempotent_on_clean_input():
         assert abs(a["start"] - b["start"]) < 0.01
 
 
+def test_recovery_is_robust_across_seeds():
+    """The cleanup+quantize chain recovers the true note count across many corruption
+    patterns — a guard that the thresholds generalize, not overfit one seed. If a future
+    threshold change starts leaving artifacts or eating real notes, this catches it."""
+    truth = _clean_melody()
+    beats = _beats()
+    dur = truth[-1]["end"] + 1
+    for seed in range(12):
+        messy = _corrupt(truth, seed=seed)
+        result = quantize.quantize_notes(
+            cleanup.clean_notes(messy, is_drum=False), beats, duration=dur
+        )
+        # exact recovery of the true note count on every seed
+        assert len(result) == len(truth), f"seed {seed}: {len(result)} != {len(truth)}"
+        # and no residual same-pitch onsets closer than an 8th note (un-merged ghosts)
+        by_pitch = {}
+        for n in sorted(result, key=lambda x: (x["pitch"], x["start"])):
+            by_pitch.setdefault(n["pitch"], []).append(n["start"])
+        for starts in by_pitch.values():
+            for a, b in zip(starts, starts[1:]):
+                assert b - a >= BEAT / 2 - 1e-6, f"seed {seed}: onsets {a},{b} too close"
+
+
 def test_messy_corruption_is_deterministic():
     a = _corrupt(_clean_melody(), seed=7)
     b = _corrupt(_clean_melody(), seed=7)

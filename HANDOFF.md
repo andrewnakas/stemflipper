@@ -295,6 +295,14 @@
   19.9 ms→**0.0 ms**; blips 2→**0**. Also tests idempotence on clean input and corruption determinism.
   This validates the iter-2/3/11 detection work end-to-end and is a regression guard for future tuning.
   TEST-ONLY (no production change, no redeploy). **93 fast tests green** (was 90; +3). iter 13 pushed.
+- **2026-07-14 (Opus, loop iter 14 — cleanup-threshold robustness guard):** Used the iter-13 harness to
+  actually TUNE — swept 12 corruption seeds through clean_notes+quantize_notes and measured recovery.
+  Result: **exact note-count recovery on 12/12 seeds** (worst seed 53 messy→32 exact), zero leftover
+  artifacts, zero real notes lost, no residual same-pitch onsets <8th-note apart. So the thresholds
+  (_DEDUP_S=45 ms, _MERGE_GAP_S=60 ms, _MIN_LEN_S=35 ms) are already well-tuned + generalize — did NOT
+  manufacture a change. Locked the sweep in as `test_recovery_is_robust_across_seeds` so a future
+  threshold regression (leftover artifacts / eaten notes) is caught. TEST-ONLY. **94 fast tests green**
+  (was 93; +1). iter 14 pushed.
 - How to run tests: `.venv/bin/pytest -m "not slow"` (fast) · `.venv/bin/pytest -m slow`
   (runs real htdemucs separation on the 14 s fixture, downloads weights on first run).
 - How to run the pipeline: `.venv/bin/python -m stemflipper <audio> -o <outdir>`.
