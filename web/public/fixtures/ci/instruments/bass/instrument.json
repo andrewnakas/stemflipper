@@ -1,0 +1,45 @@
+{
+  "type": "multisample",
+  "name": "bass",
+  "amp_env": {
+    "a": 0.005,
+    "d": 0.1,
+    "s": 1,
+    "r": 0.25
+  },
+  "zones": [
+    {
+      "path": "instruments/bass/samples/bass_033_v1.wav",
+      "root": 33,
+      "lo": 0,
+      "hi": 34,
+      "lovel": 0,
+      "hivel": 127,
+      "rr": 0,
+      "gain_db": 0,
+      "loop": null
+    },
+    {
+      "path": "instruments/bass/samples/bass_036_v1.wav",
+      "root": 36,
+      "lo": 35,
+      "hi": 37,
+      "lovel": 0,
+      "hivel": 127,
+      "rr": 0,
+      "gain_db": 0,
+      "loop": null
+    },
+    {
+      "path": "instruments/bass/samples/bass_038_v1.wav",
+      "root": 38,
+      "lo": 38,
+      "hi": 127,
+      "lovel": 0,
+      "hivel": 127,
+      "rr": 0,
+      "gain_db": 0,
+      "loop": null
+    }
+  ]
+}

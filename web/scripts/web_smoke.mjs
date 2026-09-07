@@ -10,7 +10,8 @@ import { existsSync } from "node:fs";
 import puppeteer from "puppeteer";
 
 const BASE = process.argv[2] || "http://localhost:4173/stemflipper/";
-const URL = `${BASE.replace(/\/+$/, "")}/app.html?fixture=song`;
+const FIXTURE = process.argv[3] || process.env.SMOKE_FIXTURE || "ci";
+const URL = `${BASE.replace(/\/+$/, "")}/app.html?fixture=${FIXTURE}`;
 
 const problems = [];
 let browser;

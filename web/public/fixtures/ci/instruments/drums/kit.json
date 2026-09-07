@@ -1,0 +1,49 @@
+{
+  "type": "drumkit",
+  "name": "drums",
+  "pieces": {
+    "kick": {
+      "gm": 36,
+      "gm_all": [
+        36
+      ],
+      "zones": [
+        {
+          "path": "instruments/drums/samples/kick_v1_rr1.wav",
+          "lovel": 0,
+          "hivel": 127,
+          "rr": 0
+        }
+      ]
+    },
+    "snare": {
+      "gm": 38,
+      "gm_all": [
+        38
+      ],
+      "zones": [
+        {
+          "path": "instruments/drums/samples/snare_v1_rr1.wav",
+          "lovel": 0,
+          "hivel": 127,
+          "rr": 0
+        }
+      ]
+    },
+    "hh": {
+      "gm": 42,
+      "gm_all": [
+        42,
+        46
+      ],
+      "zones": [
+        {
+          "path": "instruments/drums/samples/hh_v1_rr1.wav",
+          "lovel": 0,
+          "hivel": 127,
+          "rr": 0
+        }
+      ]
+    }
+  }
+}
