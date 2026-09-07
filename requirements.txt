@@ -26,3 +26,9 @@ piano-transcription-inference>=0.0.6  # ByteDance piano transcription (MIT)
 # the .vital warm-start are authored with numpy/scipy + JSON so the stage never needs a
 # frontier install; syntheon is an opt-in refiner behind use_synth=True.
 auraloss>=0.4
+# P1 — beat + downbeat tracking. Beat This! (CPJKU, ISMIR 2024) is MIT for both code and
+# weights, and unlike librosa it gives real DOWNBEATS, which the bar lines, time-signature
+# inference and bar-aligned loop slicing all depend on. Verified installing and running
+# (pulls torchaudio) before being pinned here. Optional at runtime: without it the pipeline
+# records a "fallback" stage and uses librosa.
+beat-this>=1.1
