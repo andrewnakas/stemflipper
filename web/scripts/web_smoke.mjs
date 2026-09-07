@@ -100,13 +100,20 @@ try {
     await s.ctx.resume?.();
     s.transport.play(0);
     const before = s.transport.now();
-    await new Promise((r) => setTimeout(r, 500));
-    const after = s.transport.now();
+    // Poll rather than sleeping a fixed 500 ms: an AudioContext can report "running"
+    // a beat before its clock actually starts ticking, which made this flaky.
+    let after = before;
+    const deadline = Date.now() + 4000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 100));
+      after = s.transport.now();
+      if (after > before + 0.05) break;
+    }
     const state = s.ctx.state;
     s.transport.seek(3);
     const seeked = s.transport.now();
     s.transport.stop();
-    return { before, after, state, seeked, playing: false };
+    return { before, after, state, seeked };
   });
   if (advanced) {
     console.log(
