@@ -33,10 +33,10 @@ def _assert_complete_bundle(result, expect_tempo=120.0, tol=3.0):
     manifest = json.loads((bundle / "manifest.json").read_text())
     assert abs(manifest["tempo"] - expect_tempo) <= tol
     assert (bundle / "README.txt").exists()
-    assert (bundle / "project.RPP").exists()
+    assert not (bundle / "project.RPP").exists(), "v2 must not write a Reaper project"
     assert (bundle / "midi" / "song.mid").exists()
-    stems = list((bundle / "stems").glob("*.wav"))
-    assert len(stems) >= 4
+    stems = list((bundle / "stems").glob("*.flac"))
+    assert len(stems) >= 4, "stems should ship as FLAC"
     sfzs = list(bundle.glob("instruments/*/*.sfz"))
     assert sfzs, "no sampler instruments built"
     with zipfile.ZipFile(result["zip_path"]) as zf:

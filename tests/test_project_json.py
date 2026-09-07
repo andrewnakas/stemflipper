@@ -15,7 +15,7 @@ def _minimal_project(**over):
     tracks = [
         pj.track_entry(
             "bass",
-            audio={"path": "stems/bass.flac", "silent": False, "peak_db": -3.0, "lufs": -18.0},
+            audio={"src": "stems/bass.flac", "silent": False, "peak_db": -3.0, "lufs": -18.0},
             notes=[{"pitch": 33, "start": 0.0, "end": 0.5, "velocity": 100}],
             midi="midi/bass.mid",
         )
@@ -50,7 +50,7 @@ def test_missing_top_level_key_is_reported():
 def test_absolute_asset_path_is_rejected():
     """Bundle-relative paths only — an absolute path breaks the zip and the file= route."""
     p = _minimal_project()
-    p["tracks"][0]["audio"]["path"] = "/tmp/leaked/bass.flac"
+    p["tracks"][0]["audio"]["src"] = "/tmp/leaked/bass.flac"
     assert any("bundle-relative" in e for e in pj.validate_project(p))
 
 
@@ -108,9 +108,9 @@ def test_note_rows_default_confidence():
 
 
 def test_drums_track_kind_is_inferred():
-    t = pj.track_entry("drums", audio={"path": "stems/drums.flac"})
+    t = pj.track_entry("drums", audio={"src": "stems/drums.flac"})
     assert t["kind"] == "drums"
-    assert pj.track_entry("bass", audio={"path": "stems/bass.flac"})["kind"] == "pitched"
+    assert pj.track_entry("bass", audio={"src": "stems/bass.flac"})["kind"] == "pitched"
 
 
 def test_write_project(tmp_path):

@@ -28,10 +28,12 @@ from . import (
     synthfit,
     transcribe,
 )
+from . import samples as samples_mod
 from .analysis import chords as chords_mod
 from .analysis import grid as grid_mod
 from .analysis import sections as sections_mod
 from .export import project_json
+from .samples.writers import write_dspreset, write_instrument_json, write_sfz
 from .separation import DEFAULT_PRESET, PRESETS
 
 log = logging.getLogger(__name__)
@@ -290,19 +292,78 @@ def run_pipeline(
             if weak in stems_meta:
                 stems_meta[weak]["low_confidence"] = True
 
+    instruments: dict[str, dict] = {}
+    loops: dict[str, list] = {}
+    phrases: dict[str, list] = {}
     for i, name in enumerate(ordered):
-        report(0.7 + 0.06 * i / max(1, len(ordered)), f"Building {name} instrument")
-        built = sampler.build_sampler(
-            name,
-            stem_paths[name],
-            tracks[name]["notes"],
-            bundle_dir / "instruments" / name,
-            is_drum=tracks[name]["is_drum"],
-        )
-        if built:
-            stems_meta[name]["instrument_sfz"] = f"instruments/{name}/{name}.sfz"
+        report(0.7 + 0.10 * i / max(1, len(ordered)), f"Building {name} samples")
+        meta = stems_meta[name]
+        result = tracks[name]
+        char = characters[name]
+        stem_audio, stem_sr = stem_audio_cache[name]
+        inst_dir = bundle_dir / "instruments" / name
+
+        instrument = None
+        try:
+            if result["is_drum"]:
+                instrument = samples_mod.build_kit(
+                    neural.drum_sub, result["notes"], inst_dir, stem_paths[name]
+                )
+            elif result["notes"] and not meta["silent"]:
+                instrument = samples_mod.build_multisample(
+                    name, stem_audio, stem_sr, result["notes"], inst_dir,
+                    sustained=bool(getattr(char, "synth_like", False))
+                    or float(char.scores.get("sustain", 0.0)) >= 0.6,
+                )
+        except Exception:
+            log.exception("sample extraction failed for %s", name)
+
+        if instrument is None and result["notes"]:
+            # last resort: the v1 one-slice-per-pitch sampler, so a stem is never left
+            # with no playable instrument at all (Invariant #4)
+            try:
+                if sampler.build_sampler(
+                    name, stem_paths[name], result["notes"], inst_dir,
+                    is_drum=result["is_drum"],
+                ):
+                    meta["instrument_sfz"] = f"instruments/{name}/{name}.sfz"
+            except Exception:
+                log.exception("legacy sampler failed for %s", name)
+        elif instrument is not None:
+            instruments[name] = instrument
+            kind = "kit" if instrument["type"] == "drumkit" else "instrument"
+            write_instrument_json(instrument, inst_dir / f"{kind}.json")
+            write_sfz(instrument, inst_dir / f"{name}.sfz")
+            write_dspreset(instrument, inst_dir / f"{name}.dspreset")
+            meta["instrument_sampler"] = f"instruments/{name}/{kind}.json"
+            meta["instrument_sfz"] = f"instruments/{name}/{name}.sfz"
+            meta["instrument_dspreset"] = f"instruments/{name}/{name}.dspreset"
+
+        # loops + phrases from the stem audio itself
+        if not meta["silent"]:
+            try:
+                loops[name] = samples_mod.extract_loops(
+                    name, stem_audio, stem_sr, grid, bundle_dir / "loops",
+                    key=analysis.key, sections=sections,
+                )
+            except Exception:
+                log.exception("loop extraction failed for %s", name)
+            if name == "vocals" and result["notes"]:
+                try:
+                    phrases[name] = samples_mod.chop_phrases(
+                        name, stem_audio, stem_sr, result["notes"], bundle_dir / "phrases"
+                    )
+                except Exception:
+                    log.exception("phrase chopping failed for %s", name)
+
+    n_zones = sum(
+        len(inst.get("zones", [])) + sum(len(p["zones"]) for p in inst.get("pieces", {}).values())
+        for inst in instruments.values()
+    )
     stage_log.note(
-        "instruments", "ok", f"{sum(1 for m in stems_meta.values() if m['instrument_sfz'])} sfz"
+        "instruments", "ok",
+        f"{len(instruments)} instruments, {n_zones} zones, "
+        f"{sum(len(v) for v in loops.values())} loops, {sum(len(v) for v in phrases.values())} phrases",
     )
 
     _run_effects_and_synthfit(
@@ -311,7 +372,9 @@ def run_pipeline(
     stage_log.note("effects", "ok", f"{sum(1 for m in stems_meta.values() if m['effects'])} analyzed")
 
     report(0.9, "Writing MIDI, manifest, DAW projects")
-    export.write_midi(tracks, grid.tempo, bundle_dir / "midi")
+    midi_written = export.write_midi(
+        tracks, grid, bundle_dir / "midi", chords=chords, sections=sections
+    )
     export.write_notes(
         tracks, duration, bundle_dir,
         tempo=grid.tempo, beat_times=grid.beats, time_signature=grid.time_signature,
@@ -319,8 +382,10 @@ def run_pipeline(
     for name, meta in stems_meta.items():
         meta["notes"] = "notes.json" if tracks.get(name, {}).get("notes") else None
 
+    # No Reaper .RPP in v2: it carried only a tempo and audio-file references, and the
+    # MIDI + DAWproject below cover every DAW (DAWproject runs before the FLAC conversion
+    # because it bundles the stem audio into its own zip).
     stem_audio_map = {n: m["audio"] for n, m in stems_meta.items()}
-    export.write_rpp(bundle_dir, grid.tempo, stem_audio_map, duration)
     dawproject, _ = stage_log.run(
         "dawproject",
         lambda: export.write_dawproject(
@@ -335,11 +400,21 @@ def run_pipeline(
     export.write_manifest(bundle_dir, manifest)
     export.write_readme(bundle_dir, input_path.name, analysis)
 
+    # Stems become FLAC now that every stage that reads them is done; the chain
+    # intermediates go too. project.json is written afterwards so its paths are right.
+    export.cleanup_workdirs(bundle_dir)
+    flac_map, _ = stage_log.run("bundle", lambda: export.stems_to_flac(bundle_dir), fallback={})
+    for name, meta in stems_meta.items():
+        rel = (flac_map or {}).get(name)
+        if rel:
+            meta["audio"] = rel
+
     project, _ = stage_log.run(
         "project",
         lambda: _build_project(
             input_path, duration, sr, grid, analysis, chords, sections, preset, neural,
             ordered, stems_meta, tracks, characters, dawproject, bundle_dir,
+            loops, phrases, midi_written,
         ),
         fallback=None,
     )
@@ -364,13 +439,18 @@ def run_pipeline(
 def _build_project(
     input_path, duration, sr, grid, analysis, chords, sections, preset, neural,
     ordered, stems_meta, tracks, characters, dawproject, bundle_dir,
+    loops=None, phrases=None, midi_written=None,
 ) -> dict:
     """Assemble project.json — the browser's whole view of the song."""
     drum_sub_meta: dict[str, list] = {}
     for piece, path in (neural.drum_sub or {}).items():
-        rel = f"stems/drums/{Path(path).name}"
-        gm = _GM_FOR_PIECE.get(piece, [])
-        drum_sub_meta.setdefault("drums", []).append({"id": piece, "path": rel, "gm": gm})
+        stem = Path(path).stem
+        rel = f"stems/drums/{stem}.flac"
+        if not (Path(bundle_dir) / rel).exists():
+            rel = f"stems/drums/{Path(path).name}"
+        drum_sub_meta.setdefault("drums", []).append(
+            {"id": piece, "src": rel, "gm": _GM_FOR_PIECE.get(piece, [])}
+        )
 
     entries = []
     for name in ordered:
@@ -384,7 +464,7 @@ def _build_project(
             project_json.track_entry(
                 name,
                 audio={
-                    "path": meta["audio"],
+                    "src": meta["audio"],
                     "silent": meta["silent"],
                     "peak_db": None,
                     "lufs": None,
@@ -409,13 +489,15 @@ def _build_project(
                     "subdivision": 4,
                 },
                 instrument={
-                    "sampler": None,
+                    "sampler": meta.get("instrument_sampler"),
                     "sfz": meta.get("instrument_sfz"),
-                    "dspreset": None,
-                    "patch": None,
+                    "dspreset": meta.get("instrument_dspreset"),
+                    "patch": meta.get("instrument_patch"),
                     "vital": meta.get("instrument_vital"),
                 },
                 effects=fx,
+                loops=(loops or {}).get(name, []),
+                phrases=(phrases or {}).get(name, []),
                 midi=meta.get("midi"),
             )
         )
@@ -436,7 +518,10 @@ def _build_project(
             "chain": neural.chain,
         },
         tracks=entries,
-        midi={"song": "midi/song.mid", "chords": None},
+        midi={
+            "song": "midi/song.mid" if (midi_written or {}).get("song") else None,
+            "chords": "midi/chords.mid" if (midi_written or {}).get("chords") else None,
+        },
         exports={"dawproject": dawproject, "readme": "README.txt"},
     )
 

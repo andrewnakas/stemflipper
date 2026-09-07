@@ -26,22 +26,29 @@ def test_app_roundtrip(app_module, fixture_song, monkeypatch):
         client = Client(url, verbose=False)
         result = client.predict(
             handle_file(str(fixture_song["paths"]["mix"])),
-            "htdemucs",
+            "fast",
+            False,
             api_name="/flip",
         )
-        zip_path, summary = result[0], result[1]
+        zip_path, summary, _link, project = result
         with zipfile.ZipFile(zip_path) as zf:
             names = zf.namelist()
-            assert any(n.endswith("manifest.json") for n in names)
+            assert any(n.endswith("project.json") for n in names)
             assert any(n.endswith(".sfz") for n in names)
-            assert any(n.endswith("notes.json") for n in names)
+            assert any(n.endswith(".mid") for n in names)
+            assert not any(n.endswith(".RPP") for n in names), "v2 must not ship a Reaper project"
         assert "tempo" in summary
-        # last output = per-stem notes for the web piano-roll
-        notes = result[-1]
-        assert isinstance(notes, dict) and "stems" in notes
-        for stem in notes["stems"].values():
-            for row in stem["notes"]:
-                assert len(row) == 4  # [pitch, start, end, velocity]
+
+        # project.json is the contract the web app renders from
+        from stemflipper.export.project_json import SCHEMA_VERSION, validate_project
+
+        assert isinstance(project, dict)
+        assert project["schema_version"] == SCHEMA_VERSION
+        assert validate_project(project) == []
+        assert project["_server"]["bundle_root"].startswith("/"), "asset root must be absolute"
+        for track in project["tracks"]:
+            for row in track["notes"]:
+                assert len(row) == 5  # [pitch, start, end, velocity, confidence]
                 break
     finally:
         app_module.demo.close()

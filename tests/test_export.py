@@ -25,26 +25,21 @@ def _tracks():
     }
 
 
+def _grid(bpm=120.0, n=33):
+    from stemflipper.analysis.grid import build_grid
+
+    beats = [i * 60.0 / bpm for i in range(n)]
+    return build_grid(beats, beats[::4])
+
+
 def test_write_midi_roundtrip(tmp_path):
-    written = export.write_midi(_tracks(), 120.0, tmp_path / "midi")
+    written = export.write_midi(_tracks(), _grid(), tmp_path / "midi")
     assert set(written) == {"song", "bass", "drums"}  # empty vocals omitted
     pm = pretty_midi.PrettyMIDI(str(written["song"]))
     assert abs(pm.get_tempo_changes()[1][0] - 120.0) < 0.01
     by_name = {i.name: i for i in pm.instruments}
     assert len(by_name["bass"].notes) == 2
     assert by_name["drums"].is_drum
-
-
-def test_rpp_block_balanced(tmp_path):
-    path = export.write_rpp(
-        tmp_path, 120.0, {"bass": "stems/bass.wav", "drums": "stems/drums.wav"}, 16.0
-    )
-    text = path.read_text()
-    opens = sum(1 for line in text.splitlines() if line.lstrip().startswith("<"))
-    closes = sum(1 for line in text.splitlines() if line.strip() == ">")
-    assert opens == closes, "unbalanced RPP blocks"
-    assert "TEMPO 120.0 4 4" in text
-    assert 'FILE "stems/bass.wav"' in text
 
 
 def test_manifest_and_zip(tmp_path):
@@ -113,3 +108,62 @@ def test_dawproject_structure(tmp_path):
     assert 0.0 <= float(bass_first.get("vel")) <= 1.0
     # drums land on GM channel 9
     assert any(n.get("channel") == "9" for n in notes)
+
+
+def test_midi_carries_a_tempo_map_and_markers(tmp_path):
+    """A song that drifts must not land progressively off the grid in a DAW."""
+    import pretty_midi
+
+    from stemflipper.analysis.grid import build_grid
+
+    # tempo halves halfway through
+    beats = [0.0, 0.5, 1.0, 1.5, 2.5, 3.5, 4.5]
+    grid = build_grid(beats, [0.0, 2.5])
+    written = export.write_midi(
+        _tracks(), grid, tmp_path / "midi",
+        sections=[{"start": 0.0, "end": 2.5, "label": "A"}, {"start": 2.5, "end": 4.5, "label": "B"}],
+    )
+    pm = pretty_midi.PrettyMIDI(str(written["song"]))
+    _, tempi = pm.get_tempo_changes()
+    assert len(tempi) >= 2, "tempo drift was flattened to a single tempo"
+    assert pm.time_signature_changes
+
+
+def test_midi_writes_a_chord_track(tmp_path):
+    import pretty_midi
+
+    chords = [{"start": 0.0, "end": 2.0, "label": "Am", "root": 9, "quality": "min", "conf": 0.9}]
+    written = export.write_midi(_tracks(), _grid(), tmp_path / "midi", chords=chords)
+    assert "chords" in written
+    pm = pretty_midi.PrettyMIDI(str(written["song"]))
+    chord_tracks = [i for i in pm.instruments if i.name == "Chords"]
+    assert chord_tracks and len(chord_tracks[0].notes) == 3  # A minor triad
+
+
+def test_drums_land_on_the_midi_drum_channel(tmp_path):
+    import pretty_midi
+
+    written = export.write_midi(_tracks(), _grid(), tmp_path / "midi")
+    pm = pretty_midi.PrettyMIDI(str(written["song"]))
+    drums = [i for i in pm.instruments if i.is_drum]
+    assert drums, "drum track was not flagged is_drum (GM channel 10)"
+
+
+def test_stems_convert_to_flac(tmp_path):
+    import numpy as np
+    import soundfile as sf
+
+    stems = tmp_path / "stems"
+    (stems / "drums").mkdir(parents=True)
+    sf.write(str(stems / "bass.wav"), np.zeros((2205, 2), dtype=np.float32), 22050)
+    sf.write(str(stems / "drums" / "kick.wav"), np.zeros((2205, 2), dtype=np.float32), 22050)
+    out = export.stems_to_flac(tmp_path)
+    assert (stems / "bass.flac").exists()
+    assert (stems / "drums" / "kick.flac").exists()
+    assert not list(stems.rglob("*.wav")), "WAV originals were left behind"
+    assert out["bass"] == "stems/bass.flac"
+
+
+def test_no_rpp_is_written():
+    """v2 dropped the Reaper project: MIDI + DAWproject cover every DAW."""
+    assert not hasattr(export, "write_rpp")

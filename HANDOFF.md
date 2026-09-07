@@ -141,15 +141,54 @@ Deploy the Space and the new frontend in the SAME commit at the end of P4, then 
   over pyin; it needs ~650 lines of vendored model code plus a weights download, so
   `mono_pitch` was built with a pluggable backend and pyin ships first.
 
+- **2026-09-07 (Fable, P3):** Samples, instruments, loops, exports — the "fully builds out
+  MIDI stems and samples" half. New `stemflipper/samples/`: `hits.py` (isolation, zero-cross
+  trim, fades, peak normalisation, timbre de-duplication), `drumkit.py` (velocity layers +
+  round robins per kit piece), `multisample.py` (clean isolated PITCH-VERIFIED notes, key
+  zones that tile the keyboard, loop-point search for sustained material), `loops.py`
+  (bar-aligned at real downbeats, clustered for variety, named with tempo and key),
+  `phrases.py` (silence-bounded vocal chops). Writers: `sfz.py` (layers, `seq_length`
+  round robins, `loop_continuous`, envelopes), `dspreset.py` (DecentSampler — free on every
+  platform), `instrument_json.py` (the browser sampler's contract).
+  New `export/midi.py` (mido): real tempo MAP, time signature, section markers, chord track,
+  drums on GM channel 10, positions converted through the grid's piecewise seconds<->beats
+  map so a drifting song stays on the grid in a DAW. `export/bundle.py` converts stems to
+  24-bit FLAC and drops the chain intermediates. **`write_rpp` is deleted** — the Reaper
+  project carried only a tempo and file references.
+  **New API: `flip(audio, preset, six) -> [zip, summary, editor link, project.json]`.**
+  **Four findings, all measured on real output:**
+  (1) Requiring literal silence from the rest of the kit rejected EVERY kick (0 of 16 —
+  kicks and hats coincide on most beats) and shipped a kit with one sample in it;
+  isolation is now judged hit-by-hit on relative level.
+  (2) Counting quiet SAMPLES rejected every drum loop in the song (percussion is ~65%
+  near-silence between hits); loop selection now compares a bar's energy to the stem's
+  median bar.
+  (3) Pitch verification used a 2048-sample frame and a 3x band, so every note below
+  ~60 Hz failed and the BASS silently lost its lowest samples; the frame is now sized from
+  the expected pitch, and the band widened to two octaves after a narrow one made pyin
+  raise (too few bins for its Viterbi transitions) and be swallowed.
+  (4) De-duplicating takes on mean-MFCC cosine scored 0.987 for two completely different
+  sounds — MFCC[0] is loudness and dominates; dropping it gives -0.27.
+  Also: `sfzlint` caught `lovel=0` as out of spec (SFZ velocities start at 1), and the
+  contract's asset key had to move from `path` to **`src`** because Gradio serialises any
+  `{"path": str}` dict as a file reference and 403s on relative paths in transit.
+  **Gate MET:** `pytest -m "not slow"` **204 passed** / 1 skipped (was 174; +30 across
+  test_samples and updated export/app/pipeline suites); sfzlint clean on generated SFZ;
+  a real `balanced` run produced 4 stems + 6 drum pieces + 16 one-shot/multisample WAVs +
+  9 bar-aligned loops + kit.json/instrument.json/.sfz/.dspreset/.vital + MIDI with a tempo
+  map + DAWproject, all validated by `validate_project`.
+  New deps: `pyloudnorm` NOT added (unused); `sfzlint` is dev-only.
+  **⚠️ The Space is still on the v1 API — do NOT redeploy until P4** ships the new frontend
+  in the same commit; the shipped legacy page reads the old positional outputs.
+
 ## V2 PHASE QUEUE
 
 - [x] **P0 — env, contract, scaffold, CI.** *Gate MET (see V2 STATUS).*
 - [x] **P1 — separation engines + single GPU stage + analysis.** *Gate MET (see V2 STATUS).*
 - [x] **P2 — transcription engines + policy.** *Gate MET (see V2 STATUS). RMVPE vocal f0
       deferred: pyin ships first behind a pluggable backend.*
-- [ ] **P3 — samples/instruments/loops + exports + new API.** `samples/**`, `export/{midi,bundle,readme,dawproject}.py`,
-      project.json native, drop `write_rpp`, `flip(audio, preset, six) -> [zip, project]`.
-      *Gate: ~150 fast tests; sfzlint clean; real-song bundle opens in DecentSampler/sfizz/Vital/a DAW.*
+- [x] **P3 — samples/instruments/loops + exports + new API.** *Gate MET (see V2 STATUS).
+      Manual DAW/sampler open-test still outstanding — needs the user's machine.*
 - [ ] **P4 — frontend engine + mixer → FIRST JOINT DEPLOY.** `web/src/{model,engine,ui}/**`,
       three lanes (original/synth/sampler) on one transport, offline render.
       *Gate: vitest + headless smoke; live cross-origin run; then deploy Space + Pages together.*

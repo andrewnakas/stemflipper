@@ -1,13 +1,19 @@
 """StemFlipper Gradio app — thin adapter over stemflipper.pipeline.
 
-The same file runs locally, on a free CPU Space, and on ZeroGPU: only the
-separation stage is GPU-relevant, so it alone is wrapped with @spaces.GPU
-(a no-op everywhere else).
+The same file runs locally, on a CPU Space and on ZeroGPU. All neural work happens in ONE
+`@spaces.GPU` call (Invariant #9) whose duration is estimated from the song and preset:
+ZeroGPU bills GPU seconds and gives anonymous API callers 2 minutes a day, so a flat
+request would burn a visitor's whole quota on a short song.
+
+API: flip(audio, preset, six) -> [bundle.zip, project.json]
+project.json is the contract the web app renders, plays and edits from.
 """
 
 import json
 import os
+import shutil
 import tempfile
+import time
 from pathlib import Path
 
 import gradio as gr
@@ -15,23 +21,23 @@ import gradio as gr
 from stemflipper import neural, separate
 from stemflipper.audio_io import duration_of
 from stemflipper.pipeline import run_pipeline
+from stemflipper.separation import DEFAULT_PRESET, PRESETS
 
 MAX_AUDIO_MINUTES = 8
-PREVIEW_STEMS = ("vocals", "drums", "bass", "other")
+WORK_ROOT = Path(os.environ.get("STEMFLIPPER_WORK", tempfile.gettempdir())) / "stemflipper"
+WORK_ROOT.mkdir(parents=True, exist_ok=True)
+WORKDIR_TTL_H = 6
 
-# PANNs CNN14 (~340 MB) is off by default on the Space so the first request isn't stalled
-# by a cold-weights download; set STEMFLIPPER_PANNS=1 (and ideally warm the cache at build)
-# to enable the instrument classifier. The router degrades to spectral cues when off.
+EDITOR_URL = "https://andrewnakas.github.io/stemflipper/"
+
+# PANNs CNN14 (~340 MB) is off by default so a cold Space isn't stalled by a weights
+# download on the first request; the router degrades to spectral cues without it.
 USE_PANNS = os.environ.get("STEMFLIPPER_PANNS", "0") == "1"
 
-# ONE GPU call per song (Invariant #9). ZeroGPU bills GPU seconds and gives anonymous
-# API callers only 2 minutes a day, so separation AND every neural analysis step share a
-# single @spaces.GPU window whose duration is estimated from the song and preset — asking
-# for a flat 180 s would burn quota and lower queue priority on short songs.
 _separate_fn = separate.separate_stems  # v1 hook: tests stub this
 
 
-def _gpu_duration(audio_path, workdir, preset="balanced", opts=None):
+def _gpu_duration(audio_path, workdir, preset=DEFAULT_PRESET, opts=None):
     try:
         return neural.estimate_gpu_seconds(
             duration_of(audio_path), preset, bool((opts or {}).get("six"))
@@ -44,99 +50,95 @@ try:
     import spaces
 
     gpu_stage = spaces.GPU(duration=_gpu_duration)(neural.run_neural_stage)
-except Exception:  # not on Spaces: run the same function inline (CPU/MPS)
+except Exception:  # not on Spaces: the same function runs inline on CPU/MPS
     gpu_stage = neural.run_neural_stage
 
 if os.environ.get("SPACE_ID"):
-    # Weights are placed at import, never inside the GPU window (a cold 77 MB download
-    # would be charged to the caller's quota).
+    # Weights are placed at import, never inside the GPU window — a cold download there
+    # would be charged to the caller's quota.
     neural.preload()
 
 _HEADER = """\
 # 🎛️ StemFlipper
 
-Upload a song → AI separates it into stems → each stem becomes **MIDI + a playable
-sliced-sample instrument (SFZ)**, plus best-effort **synth presets (Vital)** for
-mono synth lines and **EQ/reverb match** per stem → download a **DAW project bundle**
-(stems, MIDI, instruments, effects, Reaper project, manifest).
+Upload a song → it is separated into stems (and the drum kit into its own pieces) →
+each stem becomes **MIDI, one-shot samples, a multisampled instrument, bar-aligned loops**
+and a synth patch → download a bundle any DAW or sampler can open.
 
-*Research/educational demo. Separation runs on CPU on this Space — a 3–4 min song takes
-several minutes; the progress bar keeps moving. Transcription is an editable starting
-point, not a perfect score.*
+*Research/educational demo. Transcription is an editable starting point, not a finished
+score. The web editor lets you mix the original stems against the reconstruction and fix
+the notes before exporting.*
 """
 
 
-def _rt60_of(bundle, effects_rel):
-    """Read the reverb RT60 from a stem's effects json (0.0/absent if dry). Best-effort."""
-    import json
+def _prune_workdirs(ttl_h: int = WORKDIR_TTL_H) -> None:
+    cutoff = time.time() - ttl_h * 3600
+    for path in WORK_ROOT.glob("run_*"):
+        try:
+            if path.stat().st_mtime < cutoff:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            pass
 
-    try:
-        fx = json.loads((Path(bundle) / effects_rel).read_text())
-        return fx.get("rt60_s") or 0.0
-    except Exception:
-        return 0.0
+
+def _summary(project: dict) -> str:
+    grid = project.get("grid", {})
+    sep = project.get("separation", {})
+    lines = [
+        f"**tempo** {grid.get('tempo')} BPM · **key** {project.get('key', {}).get('name')} · "
+        f"**{grid.get('time_signature')}** · **{project.get('song', {}).get('duration', 0):.0f}s** · "
+        f"preset `{sep.get('preset')}`",
+        "",
+        "| stem | notes | engine | instrument | loops |",
+        "|---|---|---|---|---|",
+    ]
+    for t in project.get("tracks", []):
+        tr = t.get("transcription", {})
+        inst = t.get("instrument", {}) or {}
+        formats = [k for k in ("sampler", "sfz", "dspreset", "vital") if inst.get(k)]
+        notes = "silent" if t.get("audio", {}).get("silent") else str(tr.get("n_notes", 0))
+        sub = t.get("sub_stems") or []
+        name = t["id"] + (f" (+{len(sub)} pieces)" if sub else "")
+        lines.append(
+            f"| {name} | {notes} | {tr.get('engine', '—')} | "
+            f"{', '.join(formats) or '—'} | {len(t.get('loops') or [])} |"
+        )
+    degraded = [s for s in project.get("stages", []) if s["status"] in ("failed", "fallback")]
+    if degraded:
+        lines.append("")
+        for s in degraded:
+            lines.append(f"- `{s['name']}` **{s['status']}** — {s['detail']}")
+    return "\n".join(lines)
 
 
-def flip(audio_path, model, progress=gr.Progress()):
+def flip(audio_path, preset=DEFAULT_PRESET, six=False, progress=gr.Progress()):
     if not audio_path:
         raise gr.Error("Upload an audio file first.")
     if duration_of(audio_path) > MAX_AUDIO_MINUTES * 60:
         raise gr.Error(f"Please keep songs under {MAX_AUDIO_MINUTES} minutes for this demo.")
 
-    workdir = Path(tempfile.mkdtemp(prefix="stemflipper_"))
-    # A test (or any caller) that stubs _separate_fn wins over the GPU stage, so the
-    # round-trip suite never needs a model download.
+    _prune_workdirs()
+    workdir = Path(tempfile.mkdtemp(prefix="run_", dir=WORK_ROOT))
     stubbed = _separate_fn is not separate.separate_stems
     result = run_pipeline(
         audio_path,
         workdir,
-        model=model,
         progress=lambda frac, desc: progress(frac, desc=desc),
+        preset=preset,
+        six=bool(six),
         separate_fn=_separate_fn if stubbed else None,
         neural_fn=None if stubbed else gpu_stage,
         use_panns=USE_PANNS,
     )
-    manifest = result["manifest"]
-    bundle = result["bundle_dir"]
 
-    lines = [
-        f"**tempo** {manifest['tempo']} BPM · **key** {manifest['key']} · "
-        f"**duration** {manifest['duration']:.0f}s · model `{manifest['separation_model']}`",
-        "",
-        "| stem | instrument | notes | strategy | SFZ | Vital | FX |",
-        "|---|---|---|---|---|---|---|",
-    ]
-    for name, meta in manifest["stems"].items():
-        notes = "silent" if meta["silent"] else str(meta["n_notes"])
-        sfz = "✓" if meta["instrument_sfz"] else "—"
-        vital = "✓" if meta.get("instrument_vital") else "—"
-        # FX cell: reverb RT60 (if any) from the effects json reference, EQ always present
-        fx = "—"
-        if meta.get("effects"):
-            fx = "EQ"
-            rt60 = _rt60_of(bundle, meta["effects"])
-            if rt60:
-                fx += f" · rev {rt60:.1f}s"
-        inst = meta.get("instrument", "—")
-        strat = meta.get("strategy", "—")
-        if meta.get("low_confidence"):
-            strat += " ⚠️"
-        lines.append(f"| {name} | {inst} | {notes} | {strat} | {sfz} | {vital} | {fx} |")
-    summary = "\n".join(lines)
-
-    previews = [
-        str(bundle / "stems" / f"{name}.wav")
-        if (bundle / "stems" / f"{name}.wav").exists()
-        else None
-        for name in PREVIEW_STEMS
-    ]
-
-    # Per-stem detected notes for the client piano-roll (appended LAST so the preview
-    # output indices above stay stable for existing API callers).
-    notes_path = bundle / "notes.json"
-    notes = json.loads(notes_path.read_text()) if notes_path.exists() else {"stems": {}}
-
-    return str(result["zip_path"]), summary, *previews, notes
+    bundle = Path(result["bundle_dir"])
+    project = result.get("project")
+    if project is None:
+        project_path = bundle / "project.json"
+        project = json.loads(project_path.read_text()) if project_path.exists() else {}
+    # absolute root so the web app can fetch every asset through /gradio_api/file=
+    project["_server"] = {"bundle_root": str(bundle.resolve())}
+    return str(result["zip_path"]), project
 
 
 with gr.Blocks(title="StemFlipper") as demo:
@@ -144,28 +146,41 @@ with gr.Blocks(title="StemFlipper") as demo:
     with gr.Row():
         audio_in = gr.Audio(type="filepath", label="Song (wav/mp3/flac/m4a, ≤8 min)")
         with gr.Column():
-            model_in = gr.Dropdown(
-                choices=list(separate.MODELS),
-                value=separate.DEFAULT_MODEL,
-                label="Separation model",
-                info="htdemucs = 4 stems (default). htdemucs_6s adds guitar+piano (piano is weak).",
+            preset_in = gr.Dropdown(
+                choices=sorted(PRESETS),
+                value=DEFAULT_PRESET,
+                label="Separation preset",
+                info=(
+                    "fast = one pass (quickest). balanced = vocal model + stems + drum-kit "
+                    "split. best = same with the slower, more accurate stem model."
+                ),
+            )
+            six_in = gr.Checkbox(
+                value=False,
+                label="Also split guitar & piano out of `other` (experimental — piano bleeds)",
             )
             go_btn = gr.Button("Flip it 🎚️", variant="primary")
-    zip_out = gr.File(label="DAW project bundle (.zip)")
+    zip_out = gr.File(label="Bundle (.zip) — stems, MIDI, samples, instruments, loops")
     summary_out = gr.Markdown()
-    with gr.Row():
-        preview_outs = [
-            gr.Audio(label=name, interactive=False) for name in PREVIEW_STEMS
-        ]
-    # Per-stem detected notes → the static web frontend draws piano-rolls from this.
-    # Hidden in the Gradio UI itself (visible=False) but present in the API output.
-    notes_out = gr.JSON(visible=False)
+    editor_link = gr.Markdown()
+    project_out = gr.JSON(visible=False)
+
+    def _run(audio, preset, six, progress=gr.Progress()):
+        zip_path, project = flip(audio, preset, six, progress)
+        link = (
+            f"▶ **[Open in the StemFlipper editor]({EDITOR_URL})** — mix the original stems "
+            "against the reconstruction, fix the notes, and export MIDI and samples."
+        )
+        return zip_path, _summary(project), link, project
+
     go_btn.click(
-        flip,
-        inputs=[audio_in, model_in],
-        outputs=[zip_out, summary_out, *preview_outs, notes_out],
+        _run,
+        inputs=[audio_in, preset_in, six_in],
+        outputs=[zip_out, summary_out, editor_link, project_out],
         api_name="flip",
     )
 
 if __name__ == "__main__":
-    demo.queue(default_concurrency_limit=1).launch(max_file_size="30mb")
+    demo.queue(default_concurrency_limit=1).launch(
+        max_file_size="40mb", allowed_paths=[str(WORK_ROOT)]
+    )

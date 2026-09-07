@@ -5,8 +5,11 @@ song lives here: the beat grid, per-track notes, the assets each track owns (ste
 sampler instrument, synth patch, effects, loops, phrases) and a per-stage status trail
 so a degraded run is visible instead of silently empty (Invariant #7).
 
-Paths are ALWAYS bundle-relative POSIX strings so the same file works from a zip, from a
-local server and from the Space's /gradio_api/file= route.
+Asset references are ALWAYS bundle-relative POSIX strings under the key ``src`` so the
+same file works from a zip, from a local server and from the Space's /gradio_api/file=
+route. The key is ``src`` and not ``path`` deliberately: Gradio serialises any
+``{"path": str}`` dict as a file reference and then tries to serve it, which corrupts the
+contract in transit (it 403s on relative paths).
 """
 
 from __future__ import annotations
@@ -178,6 +181,9 @@ def grid_entry(
 
 # --------------------------------------------------------------------------- validate
 
+ASSET_KEY = "src"
+
+
 def _is_relative(path: str) -> bool:
     return not path.startswith("/") and ".." not in Path(path).parts
 
@@ -226,10 +232,10 @@ def validate_project(d: dict, bundle_dir: str | Path | None = None) -> list[str]
         kind = t.get("kind")
         if kind not in TRACK_KINDS:
             errs.append(f"{where}.kind: expected one of {TRACK_KINDS}, got {kind!r}")
-        audio_path = (t.get("audio") or {}).get("path")
+        audio_path = (t.get("audio") or {}).get(ASSET_KEY)
         if audio_path:
             if not _is_relative(audio_path):
-                errs.append(f"{where}.audio.path: must be bundle-relative, got {audio_path!r}")
+                errs.append(f"{where}.audio.{ASSET_KEY}: must be bundle-relative, got {audio_path!r}")
             assets.append(audio_path)
         for j, row in enumerate(t.get("notes") or []):
             if not isinstance(row, list) or len(row) != NOTE_ROW_LEN:
@@ -244,12 +250,12 @@ def validate_project(d: dict, bundle_dir: str | Path | None = None) -> list[str]
                     errs.append(f"{where}.instrument.{key}: must be bundle-relative, got {val!r}")
                 assets.append(val)
         for sub in t.get("sub_stems") or []:
-            if sub.get("path"):
-                assets.append(sub["path"])
+            if sub.get(ASSET_KEY):
+                assets.append(sub[ASSET_KEY])
         for coll in ("loops", "phrases"):
             for item in t.get(coll) or []:
-                if item.get("path"):
-                    assets.append(item["path"])
+                if item.get(ASSET_KEY):
+                    assets.append(item[ASSET_KEY])
         if tid and t.get("midi"):
             assets.append(t["midi"])
 
@@ -318,7 +324,7 @@ def from_v1(manifest: dict, notes: dict, bundle_dir: str | Path | None = None) -
         tracks.append(
             track_entry(
                 name,
-                audio={"path": meta.get("audio"), "silent": bool(meta.get("silent")),
+                audio={ASSET_KEY: meta.get("audio"), "silent": bool(meta.get("silent")),
                        "peak_db": None, "lufs": None},
                 kind="drums" if is_drum else "pitched",
                 character={
