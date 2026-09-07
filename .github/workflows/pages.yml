@@ -30,6 +30,13 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Headless smoke test
+        # Loads the fixture project in Chrome and checks each lane actually renders audio.
+        run: |
+          npx puppeteer browsers install chrome
+          npm run preview &
+          npx wait-on http://localhost:4173/stemflipper/app.html --timeout 60000
+          node scripts/web_smoke.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

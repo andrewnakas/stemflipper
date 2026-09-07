@@ -3,13 +3,19 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/stemflipper/favicon.svg" />
     <title>StemFlipper</title>
+    <!--
+      The v2 editor lives at /app.html and speaks the v2 Space API. Until the Space is
+      redeployed (see HANDOFF.md), the root serves the v1 client, which is what the
+      currently deployed Space still answers. One commit flips this over.
+    -->
     <meta http-equiv="refresh" content="0; url=./legacy/" />
-    <link rel="canonical" href="https://andrewnakas.github.io/stemflipper/" />
   </head>
   <body>
-    <!-- P0 scaffold: the v2 app mounts here from P4. Until then the shipped page is the
-         v1 client at /legacy/, which drives the still-deployed v1 Space API. -->
-    <p>Loading StemFlipper… <a href="./legacy/">continue</a></p>
+    <p style="font: 14px system-ui; padding: 24px">
+      Loading StemFlipper… <a href="./legacy/">continue</a> ·
+      <a href="./app.html?fixture=song">try the new editor</a>
+    </p>
   </body>
 </html>

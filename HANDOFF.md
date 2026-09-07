@@ -181,6 +181,39 @@ Deploy the Space and the new frontend in the SAME commit at the end of P4, then 
   **⚠️ The Space is still on the v1 API — do NOT redeploy until P4** ships the new frontend
   in the same commit; the shipped legacy page reads the old positional outputs.
 
+- **2026-09-07 (Fable, P4):** The editor. `web/` is now a working Vite + TypeScript +
+  Preact app that plays **the original stems and the reconstruction on one transport**,
+  which was the other half of the user's ask. Per track there are three lanes —
+  **Original** (the separated stem), **Synth** (the transcription on a patch-driven
+  subtractive synth, with purpose-built percussion voices) and **Sampler** (the
+  transcription played on one-shots and multisamples cut from THIS song) — each with its
+  own fader, plus pan, volume, solo, mute, an FX toggle that applies the stem's measured
+  EQ and reverb, and a level meter.
+  `engine/graph.ts` builds the mixer ONCE and only changes gains: v1 tore the whole graph
+  down and rescheduled every note on any mute or solo, which clicked and made live faders
+  impossible. `engine/transport.ts` schedules a rolling 150 ms window instead of every
+  note up front, so edits and mixer moves land without a rebuild and a loop wraps by
+  rebasing the clock. `engine/render.ts` reuses the same graph offline for the WAV export.
+  Also: `model/grid.ts` (mirrors the Python grid, drift-aware), `api/assets.ts` (decode
+  once, mono by default — a 6-stem 8-minute song is ~1 GB of stereo float otherwise),
+  `ui/PianoRoll.tsx` + `ui/Ruler.tsx` (canvas, viewport-culled, bar lines from real
+  downbeats, drum lanes labelled by GM name), keyboard transport, and a settings panel
+  for the backend URL and an optional HF token.
+  **Gate MET:** `npm test` 24 passed; `npm run build` clean; **headless smoke test passes**
+  — the fixture loads with zero console errors, 4 rolls render, the transport clock
+  advances and seeks, and each lane renders real audio offline (original RMS 0.36,
+  sampler 0.30, synth 0.084, no clipping). A bug the tests caught: `barLines` ignored the
+  song duration on its fallback branch and drew bar lines past the end of the song.
+  **⚠️ DEPLOY IS THE REMAINING STEP AND IT IS BLOCKED ON THE USER.** The v2 editor speaks
+  the v2 Space API, and the live Space still runs v1, so pushing the editor to the site
+  root would break it for visitors. Until then:
+  root `/` still serves the working v1 client, and the new editor ships alongside at
+  **`/app.html`** (try it with `?fixture=song`, no backend needed).
+  **To finish: (1) run `hf auth login` (interactive), (2) `.venv/bin/python
+  scripts/deploy_space.py`, (3) point `web/index.html` at `./app.html` and push.**
+  The editor already works end to end against a local backend: `.venv/bin/python app.py`,
+  then open `/app.html` and set the backend to `http://127.0.0.1:7860`.
+
 ## V2 PHASE QUEUE
 
 - [x] **P0 — env, contract, scaffold, CI.** *Gate MET (see V2 STATUS).*
@@ -189,9 +222,9 @@ Deploy the Space and the new frontend in the SAME commit at the end of P4, then 
       deferred: pyin ships first behind a pluggable backend.*
 - [x] **P3 — samples/instruments/loops + exports + new API.** *Gate MET (see V2 STATUS).
       Manual DAW/sampler open-test still outstanding — needs the user's machine.*
-- [ ] **P4 — frontend engine + mixer → FIRST JOINT DEPLOY.** `web/src/{model,engine,ui}/**`,
-      three lanes (original/synth/sampler) on one transport, offline render.
-      *Gate: vitest + headless smoke; live cross-origin run; then deploy Space + Pages together.*
+- [x] **P4 — frontend engine + mixer.** *Built, tested and smoke-verified. THE JOINT DEPLOY
+      IS OUTSTANDING and needs the user: `hf auth login`, then `deploy_space.py`, then flip
+      `web/index.html` to `./app.html`.*
 - [ ] **P5 — note editing, undo/redo, client exports, persistence.**
 - [ ] **P6 — quota UX, weight preloading, docs, GPU-cost re-measure.**
 
