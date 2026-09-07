@@ -1,4 +1,8 @@
 # StemFlipper dependency set (staged — frontier deps land with their milestones; see HANDOFF.md)
+# resampy (pulled in by audio-separator) still imports pkg_resources, which setuptools
+# 81+ REMOVED. Without this pin a fresh install fails at the first real separation with
+# "ModuleNotFoundError: No module named 'pkg_resources'" (Invariant #2).
+setuptools<81
 audio-separator[cpu]>=0.44,<0.45
 basic-pitch>=0.4,<0.5
 # basic-pitch backend: ONNX, NOT tflite-runtime. tflite-runtime ships wheels compiled

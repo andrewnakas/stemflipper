@@ -64,14 +64,49 @@ Deploy the Space and the new frontend in the SAME commit at the end of P4, then 
   **USER STEP STILL PENDING: `hf auth login`** (no HF token on this machine) — needed
   before any Space deploy, i.e. before the end of P4.
 
+- **2026-09-07 (Fable, P1):** Hierarchical separation, the single GPU stage, and the real
+  musical grid. `stemflipper/separation/` (registry + engines + hierarchical): models are
+  resolved by intent — a priority list of regexes matched against the LIVE audio-separator
+  registry (163 entries, verified) with a static fallback when offline — so a checkpoint
+  rename can no longer silently break a preset, and whatever resolved is recorded in
+  `project.json.separation.chain`. Presets: `fast` (htdemucs), `balanced` (RoFormer vocals
+  -> htdemucs -> DrumSep), `best` (RoFormer vocals -> htdemucs_ft -> DrumSep).
+  `separate_hierarchical` folds Demucs' residual vocals into `other`, splits the kit into
+  kick/snare/toms/hh/ride/crash, and forces the stems to SUM BACK TO THE MIX so the
+  browser's "Original" lanes reproduce the song. `stemflipper/neural.py` is now the ONE
+  `@spaces.GPU` function (Invariant #9) with `estimate_gpu_seconds` driving a dynamic
+  duration, `pick_device` (cuda->mps->cpu), `preload()` for import-time weights, and
+  `neural_from_separate_fn` so every v1 `separate_fn` stub still works.
+  `stemflipper/analysis/` adds a real grid (Beat This! downbeats, MIT), `infer_time_signature`,
+  a drift-following `tempo_map`, piecewise `seconds<->beats`, chord estimation and sections.
+  `pipeline.py` gained a `StageLog` runner: every stage records ok/fallback/failed +
+  seconds + detail into `project.json` (Invariant #7), and the pipeline now emits
+  `project.json` natively (a phase early — it de-risks P4).
+  **Four real bugs found and fixed by testing, not guessed at:**
+  (1) chained separation nests stem tags in filenames (`mix_(other)_roformer_(Drums)_htdemucs.wav`)
+  and reading the FIRST group labelled all four demucs outputs "other" — a real `balanced`
+  run emitted 2 stems instead of 4; now reads the LAST group, with a regression test.
+  (2) torch 2.14 hits an internal circular import when audio-separator imports it from deep
+  in a call stack, poisoning `sys.modules` — `separation/__init__.py` imports torch eagerly.
+  (3) setuptools 81+ removed `pkg_resources`, which resampy (via audio-separator) still
+  imports — pinned `setuptools<81` in requirements.txt (a fresh Space build would have hit this).
+  (4) Beat This! mis-locks on synthetic audio (beat spacing IQR 54% of median, 53 "downbeats"
+  in 64 beats) — `beats.best_grid` now gates the neural grid on coherence and falls back to
+  librosa, recording why. A bad grid is worse than a plain one: it drags every quantized note
+  onto wrong positions. Also: chain intermediates are written as 32-bit float (soundfile
+  defaults WAV to PCM_16, quantizing every hand-off between models).
+  **Gate MET:** `pytest -m "not slow"` **140 passed** / 1 skipped (was 98; +42 across
+  test_separation, test_analysis_grid, test_project_json); `pytest -m slow` green (real
+  htdemucs end-to-end); a REAL `balanced` run on the fixture produced 4 stems + 6 drum
+  pieces, a 3-step chain (RoFormer -> htdemucs -> DrumSep), residual -43.6 dB, and notes
+  drums 67 / bass 24 / other 56 / vocals 0 (correct — the fixture is instrumental).
+  New dep: `beat-this>=1.1` (MIT code+weights), verified installing + running first.
+  Web fixture regenerated from the native project.json.
+
 ## V2 PHASE QUEUE
 
 - [x] **P0 — env, contract, scaffold, CI.** *Gate MET (see V2 STATUS).*
-- [ ] **P1 — separation engines + single GPU stage + analysis.** `separation/{registry,engines,hierarchical}.py`,
-      `neural.py` (the one `@spaces.GPU` function), `analysis/{beats,grid,chords,sections}.py`,
-      pipeline stage runner + `neural_from_separate_fn` back-compat adapter, `beat-this` dep.
-      *Gate: fast tests +≈15; `--preset fast` CLI bundle on CPU/MPS; `pytest -m slow -k hierarchical`
-      writes 6 drum pieces; `separation.chain` lists 3 steps.*
+- [x] **P1 — separation engines + single GPU stage + analysis.** *Gate MET (see V2 STATUS).*
 - [ ] **P2 — transcription engines + policy.** `transcription/{basic_pitch,piano,mono_pitch,_rmvpe_model,drums,policy}.py`,
       `transcribe.py` facade, per-stem thread pool. *Gate: fixture bass ≥0.9 match via pyin;
       real song prints per-track engine; drum piece counts plausible.*

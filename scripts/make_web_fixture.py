@@ -60,14 +60,21 @@ def main() -> int:
         work / "out",
         progress=lambda frac, desc: print(f"[{frac:5.0%}] {desc}"),
         make_zip=False,
+        preset="fast",
         separate_fn=_stub_separator(fixture["paths"]),
         use_panns=False,
     )
     bundle = Path(result["bundle_dir"])
 
-    manifest = json.loads((bundle / "manifest.json").read_text())
-    notes = json.loads((bundle / "notes.json").read_text())
-    project = project_json.from_v1(manifest, notes, bundle)
+    # The pipeline emits project.json natively; the v1 shim stays as a fallback so this
+    # script still works against an older bundle.
+    native = bundle / "project.json"
+    if native.exists():
+        project = json.loads(native.read_text())
+    else:
+        manifest = json.loads((bundle / "manifest.json").read_text())
+        notes = json.loads((bundle / "notes.json").read_text())
+        project = project_json.from_v1(manifest, notes, bundle)
 
     errors = project_json.validate_project(project, bundle)
     if errors:

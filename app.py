@@ -12,7 +12,7 @@ from pathlib import Path
 
 import gradio as gr
 
-from stemflipper import separate
+from stemflipper import neural, separate
 from stemflipper.audio_io import duration_of
 from stemflipper.pipeline import run_pipeline
 
@@ -24,12 +24,33 @@ PREVIEW_STEMS = ("vocals", "drums", "bass", "other")
 # to enable the instrument classifier. The router degrades to spectral cues when off.
 USE_PANNS = os.environ.get("STEMFLIPPER_PANNS", "0") == "1"
 
+# ONE GPU call per song (Invariant #9). ZeroGPU bills GPU seconds and gives anonymous
+# API callers only 2 minutes a day, so separation AND every neural analysis step share a
+# single @spaces.GPU window whose duration is estimated from the song and preset — asking
+# for a flat 180 s would burn quota and lower queue priority on short songs.
+_separate_fn = separate.separate_stems  # v1 hook: tests stub this
+
+
+def _gpu_duration(audio_path, workdir, preset="balanced", opts=None):
+    try:
+        return neural.estimate_gpu_seconds(
+            duration_of(audio_path), preset, bool((opts or {}).get("six"))
+        )
+    except Exception:
+        return 180
+
+
 try:
     import spaces
 
-    _separate_fn = spaces.GPU(duration=180)(separate.separate_stems)
-except Exception:
-    _separate_fn = separate.separate_stems
+    gpu_stage = spaces.GPU(duration=_gpu_duration)(neural.run_neural_stage)
+except Exception:  # not on Spaces: run the same function inline (CPU/MPS)
+    gpu_stage = neural.run_neural_stage
+
+if os.environ.get("SPACE_ID"):
+    # Weights are placed at import, never inside the GPU window (a cold 77 MB download
+    # would be charged to the caller's quota).
+    neural.preload()
 
 _HEADER = """\
 # 🎛️ StemFlipper
@@ -63,12 +84,16 @@ def flip(audio_path, model, progress=gr.Progress()):
         raise gr.Error(f"Please keep songs under {MAX_AUDIO_MINUTES} minutes for this demo.")
 
     workdir = Path(tempfile.mkdtemp(prefix="stemflipper_"))
+    # A test (or any caller) that stubs _separate_fn wins over the GPU stage, so the
+    # round-trip suite never needs a model download.
+    stubbed = _separate_fn is not separate.separate_stems
     result = run_pipeline(
         audio_path,
         workdir,
         model=model,
         progress=lambda frac, desc: progress(frac, desc=desc),
-        separate_fn=_separate_fn,
+        separate_fn=_separate_fn if stubbed else None,
+        neural_fn=None if stubbed else gpu_stage,
         use_panns=USE_PANNS,
     )
     manifest = result["manifest"]
