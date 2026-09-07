@@ -214,6 +214,26 @@ Deploy the Space and the new frontend in the SAME commit at the end of P4, then 
   The editor already works end to end against a local backend: `.venv/bin/python app.py`,
   then open `/app.html` and set the backend to `http://127.0.0.1:7860`.
 
+- **2026-09-07 (Fable, P5):** Note editing, undo/redo and client-side export. Every edit —
+  move, resize from either edge, draw, erase, marquee select, velocity, quantise — is the
+  same shape (`model/commands.ts`: a map of note id to before/after), so there is ONE undo
+  path and a drag coalesces into a single history step that reverts to the pre-drag state
+  rather than the previous drag frame. `model/notes.ts` holds the operations as pure
+  functions; the piano roll does hit-testing with a few pixels of slack (short notes are
+  otherwise ungrabbable), edge detection for resize, and marquee selection.
+  Toolbar: select/draw/erase tools, a snap selector (1/4 to 1/32 or off), undo/redo, and an
+  edited-steps indicator. Keys: Cmd/Ctrl-Z and Shift-Z, Delete, Q to quantise, V/D/E for
+  tools, arrows for velocity, Escape to deselect.
+  `export/midi.ts` writes a real SMF format-1 file in the browser — tempo MAP, time
+  signature, section markers, drums on channel 10 — and `export/bundle.ts` zips the edited
+  MIDI, the rendered mix and an updated project.json (fflate).
+  **Gate MET:** `npm test` **47 passed** (was 24; +23 across notes/commands/midi);
+  the headless smoke test now also edits a note, undoes it and exports:
+  `36@0.00 -> 38@0.25, undo -> 36@0.00`, zip 2081 bytes with a valid PK header, and the
+  exported MIDI parses as format 1 with 3 tracks and 64 notes.
+  A bug the test surface caught: an edit re-sorts the track, so anything holding a note by
+  ARRAY INDEX across an edit is looking at a different note.
+
 ## V2 PHASE QUEUE
 
 - [x] **P0 — env, contract, scaffold, CI.** *Gate MET (see V2 STATUS).*
@@ -225,7 +245,8 @@ Deploy the Space and the new frontend in the SAME commit at the end of P4, then 
 - [x] **P4 — frontend engine + mixer.** *Built, tested and smoke-verified. THE JOINT DEPLOY
       IS OUTSTANDING and needs the user: `hf auth login`, then `deploy_space.py`, then flip
       `web/index.html` to `./app.html`.*
-- [ ] **P5 — note editing, undo/redo, client exports, persistence.**
+- [x] **P5 — note editing, undo/redo, client exports.** *Gate MET. IndexedDB persistence
+      and the zip-drop loader are the remaining optional pieces.*
 - [ ] **P6 — quota UX, weight preloading, docs, GPU-cost re-measure.**
 
 

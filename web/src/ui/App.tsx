@@ -8,12 +8,18 @@ import { Session } from "../engine/session";
 import { encodeWav } from "../export/wav";
 import { barsBeats, formatTime } from "../model/grid";
 import {
-  assetSource, backend, busy, duration, loadProject, loopRegion, mixer,
-  notesByTrack, playhead, playing, project, pxPerSecond, saveBackend, scrollX, status,
-  updateMixer,
+  assetSource, backend, busy, canRedo, canUndo, commitEdit, duration, edited,
+  historyDepth, loadProject, loopRegion, mixer, notesByTrack, playhead, playing,
+  previewEdit, project, pxPerSecond, redo, saveBackend, scrollX, selectedTrack, selection,
+  setNotesListener, snapDivision, status, tool, undo, updateMixer,
 } from "../model/store";
-import type { LaneId, Project, Track } from "../model/types";
-import { PianoRoll } from "./PianoRoll";
+import type { LaneId, Note, Project, Track } from "../model/types";
+import { buildExportZip } from "../export/bundle";
+import {
+  addNote, deleteNotes, moveNotes, notesIn, quantizeNotes, resizeNotes, setVelocity,
+  type Change,
+} from "../model/notes";
+import { PianoRoll, type RollGesture } from "./PianoRoll";
 import { Ruler } from "./Ruler";
 
 const LANES: { id: LaneId; label: string; hint: string }[] = [
@@ -55,6 +61,27 @@ export function App() {
       else if (e.key === "Home" || e.key === "0") session.transport.seek(0);
       else if (e.key === "End") session.transport.seek(duration());
       else if (e.key === "l" || e.key === "L") toggleLoop();
+      else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      }
+      else if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        deleteSelection();
+      }
+      else if (e.key === "q" || e.key === "Q") quantizeSelection();
+      else if (e.key === "v" || e.key === "V") tool.value = "select";
+      else if (e.key === "d" || e.key === "D") tool.value = "draw";
+      else if (e.key === "e" || e.key === "E") tool.value = "erase";
+      else if (e.key === "Escape") selection.value = new Set();
+      else if (e.key === "ArrowUp" && selection.value.size) {
+        e.preventDefault();
+        nudgeVelocity(e.shiftKey ? 16 : 4);
+      } else if (e.key === "ArrowDown" && selection.value.size) {
+        e.preventDefault();
+        nudgeVelocity(e.shiftKey ? -16 : -4);
+      }
       else if (e.key === "=" || e.key === "+") pxPerSecond.value = Math.min(400, pxPerSecond.value * 1.3);
       else if (e.key === "-") pxPerSecond.value = Math.max(4, pxPerSecond.value / 1.3);
     };
@@ -79,7 +106,8 @@ async function openProject(data: Project, source: Parameters<typeof loadProject>
   status.value = { text: "Loading stems and samples…" };
   await session.load(notesByTrack.value);
   session.applyMixer(mixer.value!);
-  status.value = { text: "Ready. Space plays; blend the lanes per track." };
+  setNotesListener((trackId, notes) => session?.setNotes(trackId, notes));
+  status.value = { text: "Ready. Space plays; blend the lanes per track; drag notes to edit." };
   (window as any).__sf.session = session;
 }
 
@@ -121,6 +149,40 @@ function TopBar({ onPlay }: { onPlay: () => void }) {
           <button onClick={() => (pxPerSecond.value = Math.max(4, pxPerSecond.value / 1.3))}>−</button>
           <button onClick={() => (pxPerSecond.value = Math.min(400, pxPerSecond.value * 1.3))}>+</button>
           <button onClick={downloadMix} disabled={busy.value}>⬇︎ Mix WAV</button>
+          <button onClick={downloadBundle} disabled={busy.value} title="MIDI + rendered mix + project.json">
+            ⬇︎ Export
+          </button>
+          <span class="dim small">|</span>
+          {(["select", "draw", "erase"] as const).map((t) => (
+            <button
+              key={t}
+              class={tool.value === t ? "on" : ""}
+              title={`${t} tool (${t[0].toUpperCase()})`}
+              onClick={() => (tool.value = t)}
+            >
+              {t === "select" ? "⌖" : t === "draw" ? "✎" : "⌫"}
+            </button>
+          ))}
+          <label class="small dim" title="snap edits to this subdivision">
+            snap{" "}
+            <select
+              value={String(snapDivision.value)}
+              onChange={(e) => (snapDivision.value = Number((e.target as HTMLSelectElement).value))}
+            >
+              <option value="1">1/4</option>
+              <option value="2">1/8</option>
+              <option value="4">1/16</option>
+              <option value="8">1/32</option>
+              <option value="0">off</option>
+            </select>
+          </label>
+          <button onClick={() => undo()} disabled={!canUndo()} title="undo (Cmd/Ctrl-Z)">↶</button>
+          <button onClick={() => redo()} disabled={!canRedo()} title="redo (Cmd/Ctrl-Shift-Z)">↷</button>
+          {edited.value ? (
+            <span class="small" style={{ color: "var(--accent)" }} title="unsaved edits">
+              edited · {historyDepth.value} step{historyDepth.value === 1 ? "" : "s"}
+            </span>
+          ) : null}
         </>
       )}
       <span class="spacer" />
@@ -416,7 +478,7 @@ function TrackRow({ track, level }: { track: Track; level: number }) {
         </div>
       </div>
       <div class="tracklanes">
-        {hasNotes ? (
+        {hasNotes || track.kind !== "drums" ? (
           <PianoRoll
             track={track}
             notes={notes}
@@ -425,6 +487,12 @@ function TrackRow({ track, level }: { track: Track; level: number }) {
             pxPerSecond={pxPerSecond.value}
             scrollX={scrollX.value}
             playhead={playhead.value}
+            selection={selectedTrack.value === track.id ? selection.value : undefined}
+            marquee={marquee.track === track.id ? marquee.rect : null}
+            tool={tool.value}
+            onGestureStart={(g) => startGesture(track.id, notes, g)}
+            onGestureMove={(t, pitch) => moveGesture(track.id, t, pitch)}
+            onGestureEnd={endGesture}
           />
         ) : (
           <div class="small dim" style={{ padding: "18px 12px" }}>
@@ -470,6 +538,173 @@ function StageTrail() {
       )}
     </div>
   );
+}
+
+function selectedIds(): Set<string> {
+  return selection.value;
+}
+
+/** Drag state for a note edit in progress. */
+const gesture: {
+  kind: RollGesture["kind"] | null;
+  trackId: string;
+  from: { time: number; pitch: number };
+  baseline: Note[];
+  ids: Set<string>;
+  key: string;
+} = { kind: null, trackId: "", from: { time: 0, pitch: 0 }, baseline: [], ids: new Set(), key: "" };
+
+const marquee: { track: string | null; rect: { t0: number; t1: number; p0: number; p1: number } | null } = {
+  track: null,
+  rect: null,
+};
+
+function startGesture(trackId: string, notes: Note[], g: RollGesture): void {
+  selectedTrack.value = trackId;
+  gesture.trackId = trackId;
+  gesture.from = { time: g.time, pitch: g.pitch };
+  gesture.baseline = notes.map((n) => ({ ...n }));
+  gesture.key = `${g.kind}:${trackId}:${Date.now()}`;
+
+  if (g.kind === "erase") {
+    if (g.noteId) commitEdit(trackId, "erase", deleteNotes(notes, new Set([g.noteId])));
+    gesture.kind = null;
+    return;
+  }
+  if (g.kind === "draw") {
+    const grid = project.value!.grid;
+    const beat = 60 / (grid.tempo || 120);
+    const length = snapDivision.value > 0 ? beat / snapDivision.value : beat / 4;
+    const change = addNote(trackId, g.pitch, g.time, length, 96, grid, snapDivision.value);
+    commitEdit(trackId, "draw", [change]);
+    selection.value = new Set([change.id]);
+    gesture.kind = null;
+    return;
+  }
+  if (g.kind === "marquee") {
+    if (!g.additive) selection.value = new Set();
+    marquee.track = trackId;
+    marquee.rect = { t0: g.time, t1: g.time, p0: g.pitch, p1: g.pitch };
+    gesture.kind = "marquee";
+    return;
+  }
+
+  // move / resize: make sure the grabbed note is selected
+  let ids = new Set(selection.value);
+  if (g.noteId && !ids.has(g.noteId)) {
+    ids = g.additive ? new Set([...ids, g.noteId]) : new Set([g.noteId]);
+  }
+  selection.value = ids;
+  gesture.ids = ids;
+  gesture.kind = g.kind;
+}
+
+function moveGesture(trackId: string, time: number, pitch: number): void {
+  if (gesture.kind === "marquee" && marquee.rect && marquee.track === trackId) {
+    marquee.rect = { ...marquee.rect, t1: time, p1: pitch };
+    const hits = notesIn(
+      notesByTrack.value[trackId] || [],
+      marquee.rect.t0, marquee.rect.t1, marquee.rect.p0, marquee.rect.p1,
+    );
+    selection.value = new Set(hits.map((n) => n.id));
+    playhead.value = playhead.value; // nudge a redraw
+    return;
+  }
+  if (!gesture.kind || gesture.trackId !== trackId || !gesture.ids.size) return;
+
+  const grid = project.value!.grid;
+  const dt = time - gesture.from.time;
+  const dp = Math.round(pitch - gesture.from.pitch);
+  let changes: Change[] = [];
+  if (gesture.kind === "move") {
+    changes = moveNotes(gesture.baseline, gesture.ids, dt, dp, grid, snapDivision.value);
+  } else if (gesture.kind === "resize-end") {
+    changes = resizeNotes(gesture.baseline, gesture.ids, dt, "end", grid, snapDivision.value);
+  } else if (gesture.kind === "resize-start") {
+    changes = resizeNotes(gesture.baseline, gesture.ids, dt, "start", grid, snapDivision.value);
+  }
+  if (changes.length) previewEdit(trackId, changes);
+}
+
+function endGesture(): void {
+  if (gesture.kind === "marquee") {
+    marquee.track = null;
+    marquee.rect = null;
+    gesture.kind = null;
+    return;
+  }
+  if (!gesture.kind) return;
+  // commit the whole drag as ONE undo step, from the pre-drag baseline
+  const current = notesByTrack.value[gesture.trackId] || [];
+  const byId = new Map(current.map((n) => [n.id, n]));
+  const changes: Change[] = [];
+  for (const before of gesture.baseline) {
+    const after = byId.get(before.id);
+    if (!after) continue;
+    if (
+      after.start !== before.start || after.end !== before.end ||
+      after.pitch !== before.pitch || after.vel !== before.vel
+    ) {
+      changes.push({ id: before.id, before, after });
+    }
+  }
+  gesture.kind = null;
+  if (changes.length) commitEdit(gesture.trackId, "edit", changes, gesture.key);
+}
+
+function deleteSelection(): void {
+  const trackId = selectedTrack.value;
+  if (!trackId || !selection.value.size) return;
+  const notes = notesByTrack.value[trackId] || [];
+  commitEdit(trackId, "delete", deleteNotes(notes, selectedIds()));
+  selection.value = new Set();
+}
+
+function quantizeSelection(): void {
+  const trackId = selectedTrack.value;
+  if (!trackId) return;
+  const notes = notesByTrack.value[trackId] || [];
+  const ids = selection.value.size ? selectedIds() : new Set(notes.map((n) => n.id));
+  const division = snapDivision.value || 4;
+  commitEdit(trackId, "quantise", quantizeNotes(notes, ids, project.value!.grid, division));
+}
+
+function nudgeVelocity(delta: number): void {
+  const trackId = selectedTrack.value;
+  if (!trackId || !selection.value.size) return;
+  const notes = notesByTrack.value[trackId] || [];
+  const current = notes.find((n) => selection.value.has(n.id));
+  if (!current) return;
+  commitEdit(trackId, "velocity", setVelocity(notes, selectedIds(), current.vel + delta));
+}
+
+async function downloadBundle() {
+  const p = project.value;
+  const src = assetSource.value;
+  const m = mixer.value;
+  if (!p || !src || !m) return;
+  busy.value = true;
+  try {
+    const blob = await buildExportZip(p, src, m, notesByTrack.value, {
+      midi: true,
+      mix: true,
+      stems: false,
+      onProgress: (text) => (status.value = { text }),
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "stemflipper-export.zip";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    status.value = { text: `Exported ${(blob.size / 1e6).toFixed(1)} MB (MIDI + mix + project).` };
+  } catch (e) {
+    status.value = { text: `Export failed: ${(e as Error).message}`, error: true };
+  } finally {
+    busy.value = false;
+  }
 }
 
 function panLabel(p: number): string {

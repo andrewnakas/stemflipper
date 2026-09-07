@@ -4,6 +4,8 @@ import { signal } from "@preact/signals";
 import type { AssetSource } from "../api/assets";
 import type { BackendConfig } from "../api/backend";
 import { defaultMixerState, type MixerState } from "../engine/graph";
+import { History, applyEdit, editFrom, type NoteEdit } from "./commands";
+import type { Change } from "./notes";
 import type { Note, Project } from "../model/types";
 import { notesFromRows } from "../model/types";
 
@@ -19,7 +21,71 @@ export const playing = signal(false);
 export const loopRegion = signal<{ a: number; b: number; on: boolean }>({ a: 0, b: 0, on: false });
 export const pxPerSecond = signal(48);
 export const scrollX = signal(0);
-export const expandedDrums = signal(false);
+export const selection = signal<Set<string>>(new Set());
+export const selectedTrack = signal<string | null>(null);
+export const tool = signal<"select" | "draw" | "erase">("select");
+export const snapDivision = signal(4); // 4 = 16ths, 0 = off
+export const historyDepth = signal(0);
+export const edited = signal(false);
+
+const history = new History();
+
+/** Apply a set of note changes as one undoable edit. */
+export function commitEdit(
+  trackId: string,
+  label: string,
+  changes: Change[],
+  coalesceKey?: string,
+): void {
+  if (!changes.length) return;
+  const edit = editFrom(trackId, label, changes, coalesceKey);
+  history.push(edit);
+  applyToStore(edit, "do");
+  historyDepth.value = history.depth;
+  edited.value = true;
+}
+
+/** Live preview during a drag: change the notes without touching history. */
+export function previewEdit(trackId: string, changes: Change[]): void {
+  if (!changes.length) return;
+  applyToStore(editFrom(trackId, "preview", changes), "do");
+}
+
+function applyToStore(edit: NoteEdit, direction: "do" | "undo"): void {
+  const current = notesByTrack.value[edit.trackId] || [];
+  const next = applyEdit(current, edit, direction);
+  notesByTrack.value = { ...notesByTrack.value, [edit.trackId]: next };
+  onNotesChanged?.(edit.trackId, next);
+}
+
+export let onNotesChanged: ((trackId: string, notes: Note[]) => void) | null = null;
+export function setNotesListener(fn: typeof onNotesChanged): void {
+  onNotesChanged = fn;
+}
+
+export function undo(): boolean {
+  const edit = history.undo();
+  if (!edit) return false;
+  applyToStore(edit, "undo");
+  historyDepth.value = history.depth;
+  return true;
+}
+
+export function redo(): boolean {
+  const edit = history.redo();
+  if (!edit) return false;
+  applyToStore(edit, "do");
+  historyDepth.value = history.depth;
+  return true;
+}
+
+export function canUndo(): boolean {
+  return history.canUndo;
+}
+
+export function canRedo(): boolean {
+  return history.canRedo;
+}
 
 const STORAGE_KEY = "stemflipper.backend";
 
@@ -56,6 +122,10 @@ export function loadProject(p: Project, source: AssetSource): void {
   for (const t of p.tracks) notes[t.id] = notesFromRows(t.id, t.notes);
   notesByTrack.value = notes;
   mixer.value = defaultMixerState(p);
+  history.clear();
+  historyDepth.value = 0;
+  edited.value = false;
+  selection.value = new Set();
   playhead.value = 0;
   loopRegion.value = { a: 0, b: 0, on: false };
 }

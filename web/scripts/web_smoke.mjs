@@ -117,6 +117,52 @@ try {
       problems.push("transport clock did not advance while the context was running");
     }
   }
+  // Editing: move a note, check it moved, undo, check it came back.
+  const edit = await page.evaluate(async () => {
+    const id = window.__sf.state.project.tracks.find((t) => t.notes.length)?.id;
+    if (!id) return null;
+    const moved = await window.__sf.editFirstNote(id, 0.25, 2);
+    const undone = window.__sf.undo();
+    const after = window.__sf.state.notes[id].find((n) => n.id === moved.id);
+    return { moved, undone, restored: { start: after.start, pitch: after.pitch } };
+  });
+  if (edit) {
+    console.log(
+      `edit: ${edit.moved.before.pitch}@${edit.moved.before.start.toFixed(2)} -> ` +
+        `${edit.moved.after.pitch}@${edit.moved.after.start.toFixed(2)}, undo -> ` +
+        `${edit.restored.pitch}@${edit.restored.start.toFixed(2)}`,
+    );
+    if (edit.moved.after.pitch !== edit.moved.before.pitch + 2) problems.push("note edit did not change pitch");
+    if (Math.abs(edit.moved.after.start - (edit.moved.before.start + 0.25)) > 1e-6) {
+      problems.push("note edit did not move in time");
+    }
+    if (Math.abs(edit.restored.start - edit.moved.before.start) > 1e-6) {
+      problems.push("undo did not restore the note's time");
+    }
+    if (!edit.undone) problems.push("undo reported nothing to undo");
+    if (edit.restored.pitch !== edit.moved.before.pitch) problems.push("undo did not restore the note");
+  }
+
+  // Export: the zip is a real zip, and the MIDI inside parses.
+  const exported = await page.evaluate(async () => {
+    const zip = await window.__sf.exportZip();
+    const midi = await window.__sf.exportMidiBytes();
+    return { zip, midiLength: midi.length, midiHead: midi.slice(0, 4) };
+  });
+  console.log(`export: zip ${exported.zip.size} bytes, midi ${exported.midiLength} bytes`);
+  if (!(exported.zip.size > 200)) problems.push("export zip is empty");
+  if (exported.zip.bytes[0] !== 0x50 || exported.zip.bytes[1] !== 0x4b) {
+    problems.push("export is not a zip (bad magic)");
+  }
+  const midiHead = String.fromCharCode(...exported.midiHead);
+  if (midiHead !== "MThd") problems.push(`exported MIDI has bad header: ${midiHead}`);
+  {
+    const { parseMidi } = await import("midi-file");
+    const parsed = parseMidi(Uint8Array.from(await page.evaluate(() => window.__sf.exportMidiBytes())));
+    const noteOns = parsed.tracks.flat().filter((e) => e.type === "noteOn").length;
+    console.log(`  midi: format ${parsed.header.format}, ${parsed.tracks.length} tracks, ${noteOns} notes`);
+    if (noteOns < 10) problems.push(`exported MIDI has too few notes (${noteOns})`);
+  }
 } catch (err) {
   problems.push(`fatal: ${err.message}`);
 } finally {
