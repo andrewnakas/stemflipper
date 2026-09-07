@@ -114,8 +114,17 @@ def _summary(project: dict) -> str:
 def flip(audio_path, preset=DEFAULT_PRESET, six=False, progress=gr.Progress()):
     if not audio_path:
         raise gr.Error("Upload an audio file first.")
-    if duration_of(audio_path) > MAX_AUDIO_MINUTES * 60:
-        raise gr.Error(f"Please keep songs under {MAX_AUDIO_MINUTES} minutes for this demo.")
+    try:
+        seconds = duration_of(audio_path)
+    except Exception as e:
+        # A file the decoders cannot read at all — say so plainly instead of failing
+        # later inside the GPU stage with a libsndfile message about pipes.
+        raise gr.Error(f"Could not read that audio file. {e}") from e
+    if seconds > MAX_AUDIO_MINUTES * 60:
+        raise gr.Error(
+            f"That file is {seconds / 60:.1f} minutes; please keep songs under "
+            f"{MAX_AUDIO_MINUTES} minutes for this demo."
+        )
 
     _prune_workdirs()
     workdir = Path(tempfile.mkdtemp(prefix="run_", dir=WORK_ROOT))
