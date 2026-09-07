@@ -204,7 +204,7 @@ Deploy the Space and the new frontend in the SAME commit at the end of P4, then 
   advances and seeks, and each lane renders real audio offline (original RMS 0.36,
   sampler 0.30, synth 0.084, no clipping). A bug the tests caught: `barLines` ignored the
   song duration on its fallback branch and drew bar lines past the end of the song.
-  **⚠️ DEPLOY IS THE REMAINING STEP AND IT IS BLOCKED ON THE USER.** The v2 editor speaks
+  **(DEPLOY DONE 2026-09-07 — see the entry above.)** At the time of writing: The v2 editor speaks
   the v2 Space API, and the live Space still runs v1, so pushing the editor to the site
   root would break it for visitors. Until then:
   root `/` still serves the working v1 client, and the new editor ships alongside at
@@ -238,6 +238,37 @@ Deploy the Space and the new frontend in the SAME commit at the end of P4, then 
   exported MIDI parses as format 1 with 3 tracks and 64 notes.
   A bug the test surface caught: an edit re-sorts the track, so anything holding a note by
   ARRAY INDEX across an edit is looking at a different note.
+
+- **2026-09-07 (Fable, DEPLOYED — the v2 cutover is DONE):** The user ran
+  `.venv/bin/hf auth login`; `scripts/finish_deploy.py` then uploaded 48 runtime files,
+  waited for the rebuild, verified the live `/flip` signature had changed to
+  `flip(audio, preset, six) -> 4 outputs`, switched the site root to the editor, deleted
+  the v1 client and pushed. **Both halves are live:**
+  https://andrewnakas.github.io/stemflipper/ now serves the v2 editor (the old `/legacy/`
+  page 404s), and the Space runs the v2 pipeline on ZeroGPU.
+  **Verified with real round trips against the DEPLOYED Space:**
+  `fast` — 70 s wall, 13.3 s GPU on **cuda**, 69-file bundle;
+  `balanced` (the default) — 58 s wall, 23.4 s GPU, chain resolved and ran as intended
+  (`mel_band_roformer_kim_ft2_bleedless_unwa.ckpt` 1.8 s → `htdemucs.yaml` 2.2 s →
+  `MDX23C-DrumSep-aufr33-jarredou.ckpt` 2.0 s), residual **-43.5 dB**, 7 drum pieces,
+  22 samples, 10 loops, 74 files, `drums_hier` on all six kit pieces (106 notes), bass via
+  `mono_pitch` (24 notes, exact), vocals correctly SILENT (the RoFormer isolated the
+  instrumental fixture properly — `fast` bled 67 phantom vocal notes, which is the
+  quality difference between the presets in one number).
+  **Two bugs the real deploy exposed, both fixed:**
+  (1) `space_info().runtime` is a `SpaceRuntime` OBJECT with `.stage`, not a dict — the
+  poller reported "unknown" forever and would have timed out a deploy that had succeeded.
+  (2) The liveness check matched "app.html" anywhere in the served page, but the
+  pre-switch index also linked to the editor, so it declared the switch live before Pages
+  had rebuilt.
+  **And one real product bug:** `beat-this` was verified installing in P1 but never added
+  to `requirements.txt`, so the deployed Space had NO beat tracker and silently recorded
+  `beats: fallback` on every run — bar lines, time-signature inference and bar-aligned
+  loop slicing were all coming from librosa's assume-every-4th-beat. Pinned and
+  redeployed; the stage detail now reads "beat_this rejected: beat spacing scattered",
+  i.e. the tracker is present and the coherence gate is correctly refusing the SYNTHETIC
+  fixture (real music passes it). **This is exactly what Invariant #7 exists for** — the
+  bug was invisible in the output and obvious in the stage trail.
 
 ## V2 PHASE QUEUE
 
