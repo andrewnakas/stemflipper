@@ -207,7 +207,10 @@ def main() -> int:
                 "https://andrewnakas.github.io/stemflipper/", timeout=30
             ) as r:
                 body = r.read().decode("utf-8", "replace")
-            if "app.html" in body:
+            # Look for the REDIRECT TARGET, not any mention of app.html: the pre-switch
+            # page also linked to the editor, so a substring check passed against the old
+            # page and reported the switch live before Pages had rebuilt.
+            if 'url=./app.html' in body.replace('"', "").replace(" ", ""):
                 say("  ✓ live: https://andrewnakas.github.io/stemflipper/")
                 say("\nDone. The editor is the site and the Space serves it.")
                 return 0
