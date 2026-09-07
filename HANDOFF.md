@@ -209,8 +209,13 @@ Deploy the Space and the new frontend in the SAME commit at the end of P4, then 
   root would break it for visitors. Until then:
   root `/` still serves the working v1 client, and the new editor ships alongside at
   **`/app.html`** (try it with `?fixture=song`, no backend needed).
-  **To finish: (1) run `hf auth login` (interactive), (2) `.venv/bin/python
-  scripts/deploy_space.py`, (3) point `web/index.html` at `./app.html` and push.**
+  **To finish, two commands:** `.venv/bin/hf auth login` (interactive — a token paste,
+  which is the only step that cannot be automated), then
+  `.venv/bin/python scripts/finish_deploy.py`, which uploads the Space, waits for it to
+  rebuild, VERIFIES the live `/flip` signature is actually v2, and only then switches the
+  site root to the editor, removes the v1 client and pushes. If the Space fails to come up
+  it stops and leaves the working v1 client live. `--check` reports state without touching
+  anything; `--no-push` stops before the push.
   The editor already works end to end against a local backend: `.venv/bin/python app.py`,
   then open `/app.html` and set the backend to `http://127.0.0.1:7860`.
 
