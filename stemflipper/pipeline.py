@@ -205,19 +205,25 @@ def run_pipeline(
     ordered = [s for s in separate.KNOWN_STEMS if s in stem_paths]
     ordered += [s for s in stem_paths if s not in ordered]
 
-    for i, name in enumerate(ordered):
-        report(0.45 + 0.25 * i / max(1, len(ordered)), f"Analyzing & transcribing {name}")
+    def _process_stem(name: str) -> tuple[str, dict, object, bool, tuple]:
+        """Route -> transcribe -> clean -> quantize for one stem (thread-safe)."""
         stem_audio, stem_sr = audio_io.load_audio(stem_paths[name], mono=True)
         silent = audio_io.is_silent(stem_audio)
-        stem_audio_cache[name] = (stem_audio, stem_sr)
 
         if silent:
             character = router.route_stem(name, stem_audio, stem_sr, [], use_panns=False)
-            result = {"notes": [], "is_drum": name == "drums"}
+            result = {"notes": [], "is_drum": name == "drums", "engine": "silent",
+                      "fallback": None}
         else:
             character = router.route_stem(name, stem_audio, stem_sr, [], use_panns=use_panns)
-            result = transcribe.transcribe_stem(
-                name, stem_paths[name], is_keys=character.is_keys
+            result = transcribe.transcribe_track(
+                name,
+                stem_paths[name],
+                y=stem_audio,
+                sr=stem_sr,
+                character=character,
+                sub_stems=(neural.drum_sub if name == "drums" else None),
+                device=getattr(neural, "device", "cpu"),
             )
             character = router.escalate_polyphony(character, result["notes"], name)
 
@@ -233,7 +239,27 @@ def run_pipeline(
                     result["notes"] = quantize.quantize_notes(result["notes"], grid.beats, duration)
                 except Exception:
                     log.exception("quantize failed for %s", name)
+        return name, result, character, silent, (stem_audio, stem_sr)
 
+    # Per-stem work is CPU-bound but dominated by native code that releases the GIL
+    # (librosa, onnxruntime), so a small thread pool is a real speedup on a 6-stem song.
+    # workers=1 keeps test output deterministic.
+    processed: dict[str, tuple] = {}
+    if workers > 1 and len(ordered) > 1:
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=min(workers, len(ordered))) as pool:
+            for i, out in enumerate(pool.map(_process_stem, ordered)):
+                processed[out[0]] = out
+                report(0.45 + 0.25 * (i + 1) / len(ordered), f"Transcribed {out[0]}")
+    else:
+        for i, name in enumerate(ordered):
+            report(0.45 + 0.25 * i / max(1, len(ordered)), f"Analyzing & transcribing {name}")
+            processed[name] = _process_stem(name)
+
+    for name in ordered:
+        _, result, character, silent, audio = processed[name]
+        stem_audio_cache[name] = audio
         tracks[name] = result
         characters[name] = character
         stems_meta[name] = {
@@ -251,8 +277,12 @@ def run_pipeline(
             "wet": character.wet,
             "router_scores": character.scores,
         }
+    engines = ", ".join(
+        f"{n}={t.get('engine', '?')}" for n, t in tracks.items() if not t.get("engine") == "silent"
+    )
     stage_log.note(
-        "transcribe", "ok", f"{sum(len(t['notes']) for t in tracks.values())} notes across {len(tracks)} stems"
+        "transcribe", "ok",
+        f"{sum(len(t['notes']) for t in tracks.values())} notes across {len(tracks)} stems ({engines})",
     )
 
     if six:
@@ -372,8 +402,8 @@ def _build_project(
                     "scores": char.scores,
                 },
                 transcription={
-                    "engine": "drums_heuristic" if result["is_drum"] else "basic_pitch",
-                    "fallback": None,
+                    "engine": result.get("engine", "basic_pitch"),
+                    "fallback": result.get("fallback"),
                     "n_notes": len(result["notes"]),
                     "quantized": bool(grid.beats),
                     "subdivision": 4,
