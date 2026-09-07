@@ -270,6 +270,34 @@ Deploy the Space and the new frontend in the SAME commit at the end of P4, then 
   fixture (real music passes it). **This is exactly what Invariant #7 exists for** — the
   bug was invisible in the output and obvious in the stage trail.
 
+- **2026-09-07 (Fable, upload bugfix — found by a REAL user upload):** A user uploaded
+  `charli.mp3` and the Space crashed inside the GPU stage with libmpg123's
+  "Giving up searching valid MPEG header after 65536 bytes of junk" then libsndfile's
+  misleading "File does not exist or is not a regular file". **The file was not MP3** — a
+  `.mp3` extension on AAC data, which is ordinary for downloaded audio — and P1's
+  `load_stereo` called `sf.read` with NO fallback, unlike the v1 `load_audio` (librosa) it
+  replaced. Reproduced exactly by copying an `.m4a` to `charli.mp3`.
+  Fix: `load_stereo` is now soundfile → **FFmpeg** → librosa, `load_audio` routes through
+  it so the whole pipeline shares one hardened decode path, `duration_of` got the same
+  tiers, and `app.py` turns an undecodable upload into a message instead of a crash.
+  **The ordering is the real finding.** On that same file librosa's deprecated audioread
+  path does something WORSE than fail: it returns **241 samples at 16 kHz for a 2-second
+  22.05 kHz file and reports success**. Accepting it would separate and transcribe 15 ms
+  of noise into a plausible-looking, meaningless bundle — a silent wrong answer rather
+  than an error. A plausibility check against the ffprobe container duration now rejects
+  any short decode whichever tier produced it.
+  `tests/test_audio_io.py` (+15) pins mp3 / m4a / flac / the reported AAC-as-mp3 case /
+  the ffmpeg tier alone / undecodable input raising something actionable / `load_audio`
+  not regressing to a bare librosa call.
+  **Gate MET: 219 fast tests** (was 204). **Verified on the LIVE Space** with the exact
+  failing shape: 90 s round trip, 50.5 s GPU on cuda, duration read as 16.022 s, drums 103
+  / bass 24 / other 50 notes, no failed stages, 77-file bundle with 7 drum pieces.
+  *(Also in that log: a pydantic `FileData` error for `input_value='ping'`. Not ours —
+  nothing in `web/src` or `app.py` sends "ping"; it is a platform health check hitting the
+  endpoint. Harmless.)*
+  **LESSON: every end-to-end test used the WAV fixture, so the mp3/m4a path the app
+  advertises was never exercised until a user hit it.**
+
 ## V2 PHASE QUEUE
 
 - [x] **P0 — env, contract, scaffold, CI.** *Gate MET (see V2 STATUS).*
