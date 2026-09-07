@@ -21,8 +21,9 @@ a playable sliced-sample instrument (SFZ)** → download a **DAW project bundle*
 [Hugging Face Space](https://huggingface.co/spaces/nakas/stemflipper) ·
 [parameter dataset](https://huggingface.co/datasets/nakas/stemflipper-dataset)
 
-The web app in [`web/`](web/) is a static, build-step-free page that calls the Space's
-API via `@gradio/client`; it is served from GitHub Pages. What the bundle contains:
+The web app in [`web/`](web/) is a Vite + TypeScript app that calls the Space's REST
+queue API directly (never `@gradio/client` — it is CORS-blocked cross-origin); GitHub
+Actions builds it and serves it from GitHub Pages. What the bundle contains:
 
 ```
 song/
@@ -37,10 +38,13 @@ song/
 ## Run locally
 
 ```bash
-python3.10 -m venv .venv && .venv/bin/pip install -r requirements.txt
+uv venv --python 3.10 .venv                          # or: python3.10 -m venv .venv
+uv pip install --python .venv/bin/python -r requirements.txt -r requirements-dev.txt
 .venv/bin/python -m stemflipper song.mp3 -o out/     # CLI
 .venv/bin/python app.py                              # Gradio UI at :7860
-.venv/bin/pytest -m "not slow"                       # tests
+.venv/bin/python -m pytest -m "not slow"             # tests
+
+cd web && npm ci && npm test && npm run dev          # web app (Vite)
 ```
 
 ## Hardware notes

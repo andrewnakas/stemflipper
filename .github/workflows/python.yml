@@ -1,0 +1,26 @@
+name: python
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  fast-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: System audio libraries
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libsndfile1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install app + dev deps
+        run: uv pip install --system -r requirements.txt -r requirements-dev.txt
+      - name: Fast tests
+        # The dataset suite self-skips (torchsynth et al. are deliberately not app deps).
+        run: pytest -m "not slow"

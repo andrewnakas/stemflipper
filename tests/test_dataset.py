@@ -9,6 +9,15 @@ All offline: torchsynth/dasp render on CPU with no downloads. These deps live in
 ``dataset/`` package directly.
 """
 
+import pytest
+
+# The dataset track's deps (torchsynth/dasp-pytorch/datasets) are deliberately NOT in the
+# app requirements — the Space never installs them. Skip this suite when they're absent
+# so CI and a lean local venv stay green (HANDOFF invariants #2/#3).
+pytest.importorskip("torchsynth")
+pytest.importorskip("dasp_pytorch")
+pytest.importorskip("datasets")
+
 import numpy as np
 import pytest
 

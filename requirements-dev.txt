@@ -1,0 +1,6 @@
+# Dev/CI only — never uploaded to the Space (see scripts/deploy_space.py ALLOW).
+pytest>=8
+gradio_client>=1
+sfzlint>=0.1.4          # validates every generated .sfz in tests (MIT)
+huggingface_hub[cli]>=0.34   # `hf auth login` + deploy
+ruff>=0.6

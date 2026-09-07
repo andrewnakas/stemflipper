@@ -1,5 +1,94 @@
 # HANDOFF — StemFlipper build state
 
+---
+
+# v2 REBUILD (approved 2026-09-06) — READ THIS FIRST
+
+The v1 build (M0–M7 + 16 loop iterations, logged below) is **superseded**. The approved
+plan is `PLAN_V2.md` (copy of `~/.claude/plans/merry-napping-matsumoto.md`). Do the next
+unchecked task in the V2 PHASE QUEUE, keep `pytest -m "not slow"` green, and update
+**V2 STATUS** before stopping. Do not re-plan.
+
+**What v2 is:** upload any song → hierarchical separation (RoFormer vocals → htdemucs →
+DrumSep per-piece drums) → per-stem transcription engines → MIDI + drum kits +
+multisamples + loops + phrases + SFZ/DecentSampler/Vital/DAWproject → a Vite/TypeScript
+web app that plays the **original stems alongside the synth and sampler reconstructions**
+on one transport, with full note editing and client-side export. Reaper `.RPP` is dropped.
+
+**Locked decisions:** ZeroGPU Space (hardware already `zero-a10g`); Vite+TS+Preact
+frontend on a Pages *workflow* build; exports = MIDI/samples/instruments/DAWproject;
+full in-browser note editing. Ableton `.als` is out of scope (proprietary).
+
+**New invariants (7-10), in force from now on:**
+7. Every pipeline stage records `{name, status ok|fallback|skipped|failed, seconds, detail}`
+   into `project.json["stages"]` — no silent `except: pass` without a trace.
+8. `project.json` (schema_version 2) is THE backend↔frontend contract; changes to it must
+   update `stemflipper/export/project_json.py::validate_project`, `tests/test_project_json.py`
+   and `web/src/model/types.ts` together.
+9. Exactly one `@spaces.GPU` call per song (`neural.run_neural_stage`) — ZeroGPU bills
+   anonymous callers 2 GPU-min/day, so extra calls cost users their quota.
+10. The frontend never uses `@gradio/client`; all requests `credentials:"omit"`.
+
+**⚠️ The Space stays on the v1 API until the END OF P4.** P3 changes `flip()` to
+`(audio, preset, six) -> [zip, project]`, which the shipped legacy page cannot read.
+Deploy the Space and the new frontend in the SAME commit at the end of P4, then delete
+`web/public/legacy/`.
+
+## V2 STATUS
+
+- **2026-09-06 (Fable, P0):** Plan approved and P0 landed. Local env recreated with
+  `uv venv --python 3.10 .venv` (torch 2.14.0, numpy 2.2.6, librosa 0.11.0 — the old
+  `.venv` had been deleted). `stemflipper/export.py` → `stemflipper/export/__init__.py`
+  (package, split in P3) + new `export/project_json.py` (the contract: `build_project`,
+  `grid_entry`, `track_entry`, `stage`, `note_rows`/`rows_to_notes`, `validate_project`,
+  `write_project`, and a `from_v1` shim so the frontend has real data before P3).
+  `tests/test_project_json.py` (+15) guards it. Web scaffold: `web/` is now a Vite+TS+Preact
+  app (`package.json`, `vite.config.ts` with `base:"/stemflipper/"`, `tsconfig.json`),
+  the v1 page moved verbatim to `web/public/legacy/index.html` (still what Pages serves,
+  via a redirect from `web/index.html`), `web/public/web/index.html` keeps the old deep
+  link alive. `web/src/api/sse.ts` + `backend.ts` port the v1 queue client to
+  fetch-streamed SSE **so an `Authorization: Bearer` header is possible** (EventSource
+  accepts no headers → all ZeroGPU calls would hit the 2-min anonymous pool); 10 vitest
+  tests cover the SSE frame parser and the URL helpers. CI added: `.github/workflows/python.yml`
+  (3.10, uv, ffmpeg+libsndfile1, `pytest -m "not slow"`) and `pages.yml` (npm ci/test/build
+  → upload `web/dist` → deploy-pages). `scripts/deploy_space.py` rewritten: RECURSIVE
+  allow-list (`stemflipper/**/*.py` — a flat glob would have shipped a half-broken package
+  once v2 adds subpackages), `--dry-run`, `HF_TOKEN` support, no `create_repo`.
+  `scripts/make_web_fixture.py` renders the synthetic song through the real pipeline with
+  separation stubbed and writes a validated v2 bundle to `web/public/fixtures/song/`
+  (4 tracks, 116 notes, tempo 120.19, key A minor) so the frontend is developable offline.
+  `tests/test_dataset.py` now `importorskip`s torchsynth/dasp/datasets so a lean venv and
+  CI stay green. **Gate MET:** `pytest -m "not slow"` = 98 passed / 2 skipped (83+15 new,
+  dataset suite skipped); `npm test` 10 passed; `npm run build` OK (dist carries
+  `/legacy/` + `/web/`); `deploy_space.py --dry-run` lists the nested package.
+  **USER STEP STILL PENDING: `hf auth login`** (no HF token on this machine) — needed
+  before any Space deploy, i.e. before the end of P4.
+
+## V2 PHASE QUEUE
+
+- [x] **P0 — env, contract, scaffold, CI.** *Gate MET (see V2 STATUS).*
+- [ ] **P1 — separation engines + single GPU stage + analysis.** `separation/{registry,engines,hierarchical}.py`,
+      `neural.py` (the one `@spaces.GPU` function), `analysis/{beats,grid,chords,sections}.py`,
+      pipeline stage runner + `neural_from_separate_fn` back-compat adapter, `beat-this` dep.
+      *Gate: fast tests +≈15; `--preset fast` CLI bundle on CPU/MPS; `pytest -m slow -k hierarchical`
+      writes 6 drum pieces; `separation.chain` lists 3 steps.*
+- [ ] **P2 — transcription engines + policy.** `transcription/{basic_pitch,piano,mono_pitch,_rmvpe_model,drums,policy}.py`,
+      `transcribe.py` facade, per-stem thread pool. *Gate: fixture bass ≥0.9 match via pyin;
+      real song prints per-track engine; drum piece counts plausible.*
+- [ ] **P3 — samples/instruments/loops + exports + new API.** `samples/**`, `export/{midi,bundle,readme,dawproject}.py`,
+      project.json native, drop `write_rpp`, `flip(audio, preset, six) -> [zip, project]`.
+      *Gate: ~150 fast tests; sfzlint clean; real-song bundle opens in DecentSampler/sfizz/Vital/a DAW.*
+- [ ] **P4 — frontend engine + mixer → FIRST JOINT DEPLOY.** `web/src/{model,engine,ui}/**`,
+      three lanes (original/synth/sampler) on one transport, offline render.
+      *Gate: vitest + headless smoke; live cross-origin run; then deploy Space + Pages together.*
+- [ ] **P5 — note editing, undo/redo, client exports, persistence.**
+- [ ] **P6 — quota UX, weight preloading, docs, GPU-cost re-measure.**
+
+
+---
+
+# v1 HISTORY (superseded — kept for context)
+
 > **Onboarding (any model, cold session):** Read this file, then `PLAN.md` (research brief +
 > component ground truth), then `research/README.md` (report map + corrections). Do the next
 > unchecked task in the queue. Update STATUS before stopping. The refined build plan this queue
