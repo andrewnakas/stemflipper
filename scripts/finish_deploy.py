@@ -76,10 +76,19 @@ def is_v2(sig: dict | None) -> bool:
     return bool(sig and "preset" in (sig.get("params") or []))
 
 
-def space_runtime() -> dict:
+def space_stage() -> str:
+    """The Space's build/run stage. `space_info().runtime` is a SpaceRuntime OBJECT with
+    a `.stage` attribute, not a dict — treating it as one silently reported 'unknown'
+    forever and would have timed out a perfectly good deploy."""
     from huggingface_hub import HfApi
 
-    return HfApi().space_info(SPACE_ID).runtime or {}
+    runtime = HfApi(token=os.environ.get("HF_TOKEN") or None).space_info(SPACE_ID).runtime
+    if runtime is None:
+        return "UNKNOWN"
+    stage = getattr(runtime, "stage", None)
+    if stage is None and hasattr(runtime, "get"):
+        stage = runtime.get("stage")
+    return str(stage or "UNKNOWN")
 
 
 def check_auth() -> str | None:
@@ -97,9 +106,9 @@ def wait_for_space() -> bool:
     last = ""
     while time.time() < deadline:
         try:
-            stage = (space_runtime() or {}).get("stage", "?")
+            stage = space_stage()
         except Exception as e:
-            stage = f"unknown ({type(e).__name__})"
+            stage = f"UNKNOWN ({type(e).__name__}: {e})"
         if stage != last:
             say(f"  space stage: {stage}")
             last = stage
