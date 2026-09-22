@@ -1,0 +1,518 @@
+{
+ "_source": "generated from stemflipper/neural.py::estimate_gpu_seconds",
+ "constants": {
+  "GPU_COST": {
+   "fast": 4.0,
+   "balanced": 12.0,
+   "best": 18.0
+  },
+  "GPU_FIXED_S": 15.0,
+  "GPU_SIX_EXTRA": 4.0
+ },
+ "rows": [
+  {
+   "duration": 0,
+   "preset": "fast",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 0,
+   "preset": "fast",
+   "six": true,
+   "expected": 30
+  },
+  {
+   "duration": 0,
+   "preset": "balanced",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 0,
+   "preset": "balanced",
+   "six": true,
+   "expected": 30
+  },
+  {
+   "duration": 0,
+   "preset": "best",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 0,
+   "preset": "best",
+   "six": true,
+   "expected": 30
+  },
+  {
+   "duration": 5,
+   "preset": "fast",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 5,
+   "preset": "fast",
+   "six": true,
+   "expected": 30
+  },
+  {
+   "duration": 5,
+   "preset": "balanced",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 5,
+   "preset": "balanced",
+   "six": true,
+   "expected": 30
+  },
+  {
+   "duration": 5,
+   "preset": "best",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 5,
+   "preset": "best",
+   "six": true,
+   "expected": 30
+  },
+  {
+   "duration": 10,
+   "preset": "fast",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 10,
+   "preset": "fast",
+   "six": true,
+   "expected": 30
+  },
+  {
+   "duration": 10,
+   "preset": "balanced",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 10,
+   "preset": "balanced",
+   "six": true,
+   "expected": 30
+  },
+  {
+   "duration": 10,
+   "preset": "best",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 10,
+   "preset": "best",
+   "six": true,
+   "expected": 30
+  },
+  {
+   "duration": 16,
+   "preset": "fast",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 16,
+   "preset": "fast",
+   "six": true,
+   "expected": 30
+  },
+  {
+   "duration": 16,
+   "preset": "balanced",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 16,
+   "preset": "balanced",
+   "six": true,
+   "expected": 30
+  },
+  {
+   "duration": 16,
+   "preset": "best",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 16,
+   "preset": "best",
+   "six": true,
+   "expected": 30
+  },
+  {
+   "duration": 30,
+   "preset": "fast",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 30,
+   "preset": "fast",
+   "six": true,
+   "expected": 30
+  },
+  {
+   "duration": 30,
+   "preset": "balanced",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 30,
+   "preset": "balanced",
+   "six": true,
+   "expected": 30
+  },
+  {
+   "duration": 30,
+   "preset": "best",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 30,
+   "preset": "best",
+   "six": true,
+   "expected": 30
+  },
+  {
+   "duration": 60,
+   "preset": "fast",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 60,
+   "preset": "fast",
+   "six": true,
+   "expected": 30
+  },
+  {
+   "duration": 60,
+   "preset": "balanced",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 60,
+   "preset": "balanced",
+   "six": true,
+   "expected": 31
+  },
+  {
+   "duration": 60,
+   "preset": "best",
+   "six": false,
+   "expected": 33
+  },
+  {
+   "duration": 60,
+   "preset": "best",
+   "six": true,
+   "expected": 37
+  },
+  {
+   "duration": 90,
+   "preset": "fast",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 90,
+   "preset": "fast",
+   "six": true,
+   "expected": 30
+  },
+  {
+   "duration": 90,
+   "preset": "balanced",
+   "six": false,
+   "expected": 33
+  },
+  {
+   "duration": 90,
+   "preset": "balanced",
+   "six": true,
+   "expected": 39
+  },
+  {
+   "duration": 90,
+   "preset": "best",
+   "six": false,
+   "expected": 42
+  },
+  {
+   "duration": 90,
+   "preset": "best",
+   "six": true,
+   "expected": 48
+  },
+  {
+   "duration": 120,
+   "preset": "fast",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 120,
+   "preset": "fast",
+   "six": true,
+   "expected": 31
+  },
+  {
+   "duration": 120,
+   "preset": "balanced",
+   "six": false,
+   "expected": 39
+  },
+  {
+   "duration": 120,
+   "preset": "balanced",
+   "six": true,
+   "expected": 47
+  },
+  {
+   "duration": 120,
+   "preset": "best",
+   "six": false,
+   "expected": 51
+  },
+  {
+   "duration": 120,
+   "preset": "best",
+   "six": true,
+   "expected": 59
+  },
+  {
+   "duration": 210,
+   "preset": "fast",
+   "six": false,
+   "expected": 30
+  },
+  {
+   "duration": 210,
+   "preset": "fast",
+   "six": true,
+   "expected": 43
+  },
+  {
+   "duration": 210,
+   "preset": "balanced",
+   "six": false,
+   "expected": 57
+  },
+  {
+   "duration": 210,
+   "preset": "balanced",
+   "six": true,
+   "expected": 71
+  },
+  {
+   "duration": 210,
+   "preset": "best",
+   "six": false,
+   "expected": 78
+  },
+  {
+   "duration": 210,
+   "preset": "best",
+   "six": true,
+   "expected": 92
+  },
+  {
+   "duration": 240,
+   "preset": "fast",
+   "six": false,
+   "expected": 31
+  },
+  {
+   "duration": 240,
+   "preset": "fast",
+   "six": true,
+   "expected": 47
+  },
+  {
+   "duration": 240,
+   "preset": "balanced",
+   "six": false,
+   "expected": 63
+  },
+  {
+   "duration": 240,
+   "preset": "balanced",
+   "six": true,
+   "expected": 79
+  },
+  {
+   "duration": 240,
+   "preset": "best",
+   "six": false,
+   "expected": 87
+  },
+  {
+   "duration": 240,
+   "preset": "best",
+   "six": true,
+   "expected": 103
+  },
+  {
+   "duration": 300,
+   "preset": "fast",
+   "six": false,
+   "expected": 35
+  },
+  {
+   "duration": 300,
+   "preset": "fast",
+   "six": true,
+   "expected": 55
+  },
+  {
+   "duration": 300,
+   "preset": "balanced",
+   "six": false,
+   "expected": 75
+  },
+  {
+   "duration": 300,
+   "preset": "balanced",
+   "six": true,
+   "expected": 95
+  },
+  {
+   "duration": 300,
+   "preset": "best",
+   "six": false,
+   "expected": 105
+  },
+  {
+   "duration": 300,
+   "preset": "best",
+   "six": true,
+   "expected": 125
+  },
+  {
+   "duration": 480,
+   "preset": "fast",
+   "six": false,
+   "expected": 47
+  },
+  {
+   "duration": 480,
+   "preset": "fast",
+   "six": true,
+   "expected": 79
+  },
+  {
+   "duration": 480,
+   "preset": "balanced",
+   "six": false,
+   "expected": 111
+  },
+  {
+   "duration": 480,
+   "preset": "balanced",
+   "six": true,
+   "expected": 143
+  },
+  {
+   "duration": 480,
+   "preset": "best",
+   "six": false,
+   "expected": 159
+  },
+  {
+   "duration": 480,
+   "preset": "best",
+   "six": true,
+   "expected": 191
+  },
+  {
+   "duration": 600,
+   "preset": "fast",
+   "six": false,
+   "expected": 47
+  },
+  {
+   "duration": 600,
+   "preset": "fast",
+   "six": true,
+   "expected": 79
+  },
+  {
+   "duration": 600,
+   "preset": "balanced",
+   "six": false,
+   "expected": 111
+  },
+  {
+   "duration": 600,
+   "preset": "balanced",
+   "six": true,
+   "expected": 143
+  },
+  {
+   "duration": 600,
+   "preset": "best",
+   "six": false,
+   "expected": 159
+  },
+  {
+   "duration": 600,
+   "preset": "best",
+   "six": true,
+   "expected": 191
+  },
+  {
+   "duration": 3600,
+   "preset": "fast",
+   "six": false,
+   "expected": 47
+  },
+  {
+   "duration": 3600,
+   "preset": "fast",
+   "six": true,
+   "expected": 79
+  },
+  {
+   "duration": 3600,
+   "preset": "balanced",
+   "six": false,
+   "expected": 111
+  },
+  {
+   "duration": 3600,
+   "preset": "balanced",
+   "six": true,
+   "expected": 143
+  },
+  {
+   "duration": 3600,
+   "preset": "best",
+   "six": false,
+   "expected": 159
+  },
+  {
+   "duration": 3600,
+   "preset": "best",
+   "six": true,
+   "expected": 191
+  }
+ ]
+}

@@ -49,7 +49,7 @@ export type ErrorCode =
   | "auth"
   | "backend";
 
-export type Recovery = "sign_in" | "use_fast" | "wait" | "retry" | "trim" | "compress" | "paste_token" | "demo" | "pick_another";
+export type Recovery = "sign_in" | "use_fast" | "wait" | "retry" | "trim" | "compress" | "convert" | "paste_token" | "demo" | "pick_another";
 
 export interface JobError {
   code: ErrorCode;
@@ -297,6 +297,10 @@ function parseClock(text: string): number | undefined {
  * fails, and it carries the numbers needed to say "sign in" or "use Fast" instead of
  * printing a stack trace.
  */
+export function isJobError(e: unknown): e is JobError {
+  return Boolean(e) && typeof e === "object" && Array.isArray((e as JobError).recovery) && typeof (e as JobError).code === "string";
+}
+
 export function classifyError(raw: unknown): JobError {
   const text = typeof raw === "string" ? raw : (raw as Error)?.message || String(raw);
   const t = text.toLowerCase();
@@ -338,7 +342,7 @@ export function classifyError(raw: unknown): JobError {
       code: "undecodable",
       message: "That file could not be decoded. It may be corrupt, or not really audio.",
       detail: text,
-      recovery: ["pick_another", "compress"],
+      recovery: ["pick_another", "convert"],
     };
   }
 

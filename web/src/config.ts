@@ -43,7 +43,8 @@ export const PRESETS: Preset[] = ["fast", "balanced", "best"];
 export const AUDIOSAW = {
   home: "https://audiosaw.com/",
   trim: "https://audiosaw.com/audio-cutter",
-  convert: "https://audiosaw.com/audio-compressor",
+  compress: "https://audiosaw.com/audio-compressor",
+  convert: "https://audiosaw.com/tools",
 };
 
 export const CANONICAL_URL = "https://audiosaw.com/stemflipper/";

@@ -89,6 +89,10 @@ export function canRedo(): boolean {
 
 const STORAGE_KEY = "stemflipper.backend";
 
+/** "owner/name" of the Space we talk to; ?space= overrides it for testing a fork. */
+export const spaceId =
+  (typeof location !== "undefined" && new URLSearchParams(location.search).get("space")) || "nakas/stemflipper";
+
 export const backend = signal<BackendConfig>(loadBackend());
 
 function loadBackend(): BackendConfig {
