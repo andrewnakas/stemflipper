@@ -1,0 +1,41 @@
+/** Page scaffolding and the three consumer screens' layout. Breakpoints: 640 / 900 / 1200. */
+
+.app { display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
+
+/* Studio needs a fixed-height flex column so the track area scrolls, not the page. */
+.app.app--studio { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
+
+.container { width: 100%; max-width: var(--container); margin: 0 auto; padding: 0 var(--s4); }
+.container--narrow { max-width: 760px; }
+
+.screen { flex: 1; min-height: 0; }
+.screen--scroll { overflow: auto; }
+
+.section { padding: var(--s7) 0; }
+.section + .section { padding-top: 0; }
+.section__head { margin-bottom: var(--s4); }
+
+/* Site header (landing / run / listen) */
+.siteheader {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.siteheader__brand {
+  display: flex; align-items: center; gap: var(--s2);
+  font-family: var(--serif); font-weight: 700; font-size: var(--t-lg);
+  color: var(--text); text-decoration: none;
+}
+.siteheader__brand:hover { color: var(--text); }
+.siteheader__by { font-family: var(--sans); font-size: var(--t-xs); color: var(--text-dim); font-weight: 400; }
+
+.grid-cards { display: grid; gap: var(--s4); grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.grid-2 { display: grid; gap: var(--s4); grid-template-columns: 1fr 1fr; }
+
+@media (max-width: 640px) {
+  .grid-2 { grid-template-columns: 1fr; }
+  .section { padding: var(--s5) 0; }
+  :root { --t-3xl: 32px; --t-2xl: 26px; }
+  .container { padding: 0 var(--s3); }
+}

@@ -1,0 +1,64 @@
+/** The Studio editor's own chrome. Studio always renders inside [data-scheme="studio"]. */
+
+.studiobar {
+  display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap;
+  padding: var(--s2) var(--s3);
+  background: var(--surface); border-bottom: 1px solid var(--line);
+  flex: none;
+}
+.studiobar__clock {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: var(--t-md); color: var(--accent); min-width: 92px;
+}
+.studiobar__sep { color: var(--line); }
+
+.studio-scroll { flex: 1; overflow: auto; min-height: 0; }
+
+.tracks { display: flex; flex-direction: column; }
+.track { display: flex; border-bottom: 1px solid var(--line); }
+.trackhead {
+  width: 260px; min-width: 260px; padding: var(--s2) var(--s3);
+  background: var(--surface); border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.tracklanes { flex: 1; position: relative; min-width: 0; }
+.track__name { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.lanefader {
+  display: grid; grid-template-columns: 62px 1fr 30px;
+  align-items: center; gap: 6px; font-size: var(--t-xs);
+}
+.lanefader input[type="range"] { width: 100%; min-width: 0; }
+
+.meter {
+  width: 7px; height: 20px; background: var(--surface-3); border-radius: 2px;
+  overflow: hidden; display: flex; align-items: flex-end; flex: none;
+}
+.meter__fill { width: 100%; background: var(--roll-playhead); }
+
+.ruler {
+  position: sticky; top: 0; z-index: 3;
+  background: var(--ruler-bg); border-bottom: 1px solid var(--line);
+}
+
+.stage-ok { color: var(--success); }
+.stage-fallback { color: var(--warn); }
+.stage-failed { color: var(--error); }
+.stage-skipped { color: var(--text-dim); }
+
+.studio table { border-collapse: collapse; font-size: var(--t-sm); }
+.studio th, .studio td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; }
+
+.lane-explainer {
+  display: flex; gap: var(--s4); flex-wrap: wrap;
+  padding: var(--s2) var(--s3); background: var(--surface-2);
+  border-bottom: 1px solid var(--line); font-size: var(--t-xs); color: var(--text-dim);
+  flex: none;
+}
+.lane-explainer b { color: var(--text-soft); }
+
+.studio-narrow {
+  display: none; padding: var(--s2) var(--s3);
+  background: var(--warn-soft); color: var(--warn); font-size: var(--t-xs);
+}
+@media (max-width: 900px) { .studio-narrow { display: block; } }
