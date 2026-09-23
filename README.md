@@ -14,12 +14,25 @@ short_description: Song → stems → MIDI + samples → editable instruments
 
 # 🎛️ StemFlipper
 
-Drop a song. It comes back split into stems — and the drum kit split again into kick,
-snare, toms, hi-hat, ride and crash — with each stem transcribed to **MIDI** and cut into
-**samples**: drum one-shots with velocity layers and round robins, pitch-verified
-multisamples, bar-aligned loops, vocal phrase chops. You get a bundle any DAW or sampler
-can open, and a web editor that plays **the original stems against the reconstruction** so
-you can blend them, fix the notes, and export.
+Drop a song. It comes back split into stems, each transcribed to **MIDI**, with a web
+editor that plays **the original stems against the reconstruction** so you can blend them,
+fix the notes and export.
+
+**You choose where it runs.**
+
+| | in your browser | on the server |
+|---|---|---|
+| stems | vocals + instrumental | vocals, drums, bass, other — and the kit split into kick, snare, toms, hi-hat, ride, crash |
+| MIDI | yes | yes, with a tempo map and section markers |
+| samples, instruments, loops | — | drum one-shots with velocity layers and round robins, pitch-verified multisamples, bar-aligned loops, vocal chops |
+| uploads your song | no | yes, deleted within 6 hours |
+| limit | none | free GPU time, rationed per day |
+| speed (3:30 song) | ~4 min on a GPU, much slower without | ~1 min |
+
+The in-browser path exists because the shared GPU pool is two minutes a day across
+*everyone* who is not signed in. It runs UVR-MDX-NET and basic-pitch through
+onnxruntime-web, prefers WebGPU, and caches the 64 MB separation model so only the first
+run pays for it.
 
 **Use it:** [audiosaw.com/stemflipper](https://audiosaw.com/stemflipper/) ·
 [hear an example](https://audiosaw.com/stemflipper/?fixture=demo) ·
@@ -73,12 +86,14 @@ sanity check), the ByteDance model for piano, per-piece onsets for drums, basic-
 elsewhere. Every stage records whether it succeeded, fell back or failed, and that trail
 ships in `project.json` and is visible on the page under "How this was made".
 
-## Free, with a daily limit
+## The server's daily limit
 
-The Space runs on **ZeroGPU**, which is free but rationed per person per day. All neural
-work happens in one GPU call per song, whose length is estimated from the song and preset
-— and ZeroGPU refuses a job outright if that estimate exceeds what the caller has left, so
-the browser does the same arithmetic before uploading anything.
+Running in your browser has no limit. The four-stem version uses the Space, which runs on
+**ZeroGPU** — free, but rationed per person per day. All neural work happens in one GPU
+call per song, whose length is estimated from the song and preset, and ZeroGPU refuses a
+job outright if that estimate exceeds what the caller has left — so the browser does the
+same arithmetic before uploading anything. There is a second, separate throttle on the
+*number* of runs, which carries no numbers at all and is fixed only by authenticating.
 
 | you are | GPU per day | songs of about 3:30 |
 |---|---|---|
@@ -102,6 +117,7 @@ cd web && npm ci && npm run dev                      # the site
 npm test                                             # vitest
 npm run mock &                                       # a fake Space that replays real frames
 npm run smoke -- --scenario upload --backend http://localhost:7861
+npm run smoke -- --scenario local --clip song.wav    # the in-browser pipeline, for real
 ```
 
 Point the site's **Advanced → Processing server** at `http://127.0.0.1:7860` to use your
@@ -111,6 +127,10 @@ own machine and skip the queue and the daily limit entirely.
 
 - Transcription is an **editable starting point**, not a finished score. Drums are the
   most accurate part; dense polyphony in `other` is the least.
+- In the browser you get two stems, not four. That is a model limit: Demucs' ONNX export
+  is 158 MB and onnxruntime-web cannot load it, while MDX-Net is 64 MB and works. Without
+  WebGPU the browser path is 10–30x slower than real time, and the page says so before you
+  start rather than after.
 - Beat tracking sometimes locks to double time on rock — the bundled example reports
   214 BPM for a track that a person would count at 107.
 - Samples inherit whatever bleed and reverb the separation left in the stem.
@@ -123,8 +143,9 @@ own machine and skip the queue and the daily limit entirely.
 
 ## Repo map
 
-`stemflipper/` the pipeline (`python -m stemflipper`) · `app.py` the Gradio backend ·
-`web/` the Vite + TypeScript site · `tests/` pytest with a deterministic synthetic song ·
+`stemflipper/` the server pipeline (`python -m stemflipper`) · `app.py` the Gradio backend ·
+`web/` the Vite + TypeScript site · `web/src/local/` the same job done in the browser ·
+`tests/` pytest with a deterministic synthetic song ·
 `PLAN_V3.md` the current plan · `HANDOFF.md` build state and invariants ·
 `dataset/` the synthetic parameter-dataset generator.
 
