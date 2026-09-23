@@ -13,8 +13,9 @@
  * Usage: node scripts/web_smoke.mjs [baseUrl] [--scenario name] [--backend url]
  */
 
-import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import puppeteer from "puppeteer";
 
 const argv = process.argv.slice(2);
@@ -26,7 +27,39 @@ const BASE = (argv[0] && !argv[0].startsWith("--") ? argv[0] : "http://localhost
 const SCENARIO = flag("scenario", process.env.SMOKE_SCENARIO || "fixture");
 const MOCK = flag("backend", process.env.MOCK_BACKEND || "http://localhost:7861");
 const FIXTURE = flag("fixture", process.env.SMOKE_FIXTURE || "ci");
-const SAMPLE = fileURLToPath(new URL("../../tests/assets/mix.wav", import.meta.url));
+/**
+ * The file the upload scenario drops on the page.
+ *
+ * Synthesised rather than committed: tests/assets is gitignored, so depending on it made
+ * this scenario pass locally and fail in CI. A real WAV header matters — the app reads
+ * the duration in the browser before uploading anything.
+ */
+function sampleWav(seconds = 3, sampleRate = 44100) {
+  const frames = seconds * sampleRate;
+  const buf = Buffer.alloc(44 + frames * 2);
+  buf.write("RIFF", 0);
+  buf.writeUInt32LE(36 + frames * 2, 4);
+  buf.write("WAVEfmt ", 8);
+  buf.writeUInt32LE(16, 16); // fmt chunk size
+  buf.writeUInt16LE(1, 20); // PCM
+  buf.writeUInt16LE(1, 22); // mono
+  buf.writeUInt32LE(sampleRate, 24);
+  buf.writeUInt32LE(sampleRate * 2, 28); // byte rate
+  buf.writeUInt16LE(2, 32); // block align
+  buf.writeUInt16LE(16, 34); // bits
+  buf.write("data", 36);
+  buf.writeUInt32LE(frames * 2, 40);
+  for (let i = 0; i < frames; i++) {
+    buf.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 220 * i) / sampleRate) * 12000), 44 + i * 2);
+  }
+  const dir = join(tmpdir(), "stemflipper-smoke");
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, "sample.wav");
+  writeFileSync(path, buf);
+  return path;
+}
+
+const SAMPLE = sampleWav();
 
 const problems = [];
 const note = (...m) => console.log(" ", ...m);
