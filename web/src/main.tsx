@@ -35,6 +35,11 @@ render(<App />, root);
       source: assetSource.value,
     };
   },
+  /** Stems play before patches and sampler zones finish; wait for the rest. */
+  async waitForInstruments() {
+    await session.value?.instrumentsReady;
+    return true;
+  },
   async renderMix(opts?: { to?: number }) {
     const { renderMix, bufferRms, bufferPeak } = await import("./engine/render");
     const buf = await renderMix(project.value!, assetSource.value!, mixer.value!, notesByTrack.value, {

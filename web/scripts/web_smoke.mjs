@@ -145,6 +145,10 @@ async function scenarioFixture(page) {
   note(`studio: ${rolls} piano rolls`);
   if (rolls < 1) problems.push("piano rolls did not render");
 
+  // load() resolves as soon as the stems can play; the synth patches and sampler zones
+  // arrive afterwards, so wait for them before asking those lanes to make a sound.
+  await page.evaluate(() => window.__sf.waitForInstruments());
+
   for (const lane of ["original", "synth", "sampler"]) {
     const result = await page.evaluate(async (laneId) => {
       const ids = window.__sf.state.project.tracks.map((t) => t.id);

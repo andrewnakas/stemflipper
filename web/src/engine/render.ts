@@ -25,6 +25,10 @@ export async function renderMix(
 
   const session = new Session(project, source, state, ctx);
   await session.load(notesByTrack);
+  // load() returns as soon as the stems can play, which is right for the live page but
+  // wrong here: everything below is scheduled in one pass, so a sampler zone that arrives
+  // afterwards would simply be missing from the render.
+  await session.instrumentsReady;
   session.applyMixer(state);
 
   // Offline has no real clock, so schedule everything up front rather than in a window.

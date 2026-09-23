@@ -17,6 +17,8 @@ export class Session {
   readonly ctx: BaseAudioContext;
   graph: MixGraph;
   transport: Transport;
+  /** Resolves when patches and sampler zones have finished loading. */
+  instrumentsReady: Promise<void> = Promise.resolve();
   private runtimes = new Map<string, TrackRuntime>();
 
   constructor(
@@ -31,7 +33,16 @@ export class Session {
     this.transport.duration = projectData.song.duration;
   }
 
-  /** Build a runtime per track. Audio and samples stream in; notes play immediately. */
+  /**
+   * Build a runtime per track.
+   *
+   * Resolves as soon as the STEMS can play. Patches and sampler zones keep loading in the
+   * background and attach when they arrive: a real song's sampler zones are dozens of
+   * small files, and waiting for all of them put five seconds between "Hear an example"
+   * and hearing anything. Both those lanes start at gain 0 anyway (defaultMixerState), so
+   * nothing is audibly missing in the meantime — and `instrumentsReady` is there for
+   * anyone who needs to wait for the rest.
+   */
   async load(notesByTrack: Record<string, Note[]>): Promise<void> {
     const runtimes: TrackRuntime[] = [];
     for (const track of this.projectData.tracks) {
@@ -53,46 +64,53 @@ export class Session {
     }
     this.transport.setTracks(runtimes);
 
-    await Promise.all(
-      this.projectData.tracks.map(async (track) => {
-        const runtime = this.runtimes.get(track.id);
-        if (!runtime) return;
-        const jobs: Promise<unknown>[] = [];
+    const audio: Promise<unknown>[] = [];
+    const instruments: Promise<unknown>[] = [];
 
-        if (track.audio.src && !track.audio.silent) {
-          jobs.push(
-            decodeAudio(this.ctx, assetUrl(this.source, track.audio.src), { mono: true })
-              .then((buf) => runtime.audio.setBuffer(buf))
-              .catch(() => undefined),
-          );
-        }
-        if (track.instrument.patch) {
-          jobs.push(
-            fetchJson<Patch>(assetUrl(this.source, track.instrument.patch))
-              .then((patch) => runtime.synth.setPatch(patch))
-              .catch(() => undefined),
-          );
-        }
-        if (track.instrument.sampler) {
-          jobs.push(
-            fetchJson<Instrument>(assetUrl(this.source, track.instrument.sampler))
-              .then(async (inst) => {
-                const lane = new SamplerLane(
-                  this.ctx,
-                  this.graph.tracks.get(track.id)!.lanes.sampler,
-                  inst,
-                  (rel) => assetUrl(this.source, rel),
-                );
-                await lane.load();
-                runtime.sampler = lane;
-              })
-              .catch(() => undefined),
-          );
-        }
-        await Promise.all(jobs);
-      }),
-    );
+    for (const track of this.projectData.tracks) {
+      const runtime = this.runtimes.get(track.id);
+      if (!runtime) continue;
+
+      if (track.audio.src && !track.audio.silent) {
+        audio.push(
+          decodeAudio(this.ctx, assetUrl(this.source, track.audio.src), { mono: true })
+            .then((buf) => runtime.audio.setBuffer(buf))
+            .catch(() => undefined),
+        );
+      }
+      if (track.instrument.patch) {
+        instruments.push(
+          fetchJson<Patch>(assetUrl(this.source, track.instrument.patch))
+            .then((patch) => runtime.synth.setPatch(patch))
+            .catch(() => undefined),
+        );
+      }
+      if (track.instrument.sampler) {
+        instruments.push(
+          fetchJson<Instrument>(assetUrl(this.source, track.instrument.sampler))
+            .then(async (inst) => {
+              const lane = new SamplerLane(
+                this.ctx,
+                this.graph.tracks.get(track.id)!.lanes.sampler,
+                inst,
+                (rel) => assetUrl(this.source, rel),
+              );
+              await lane.load();
+              runtime.sampler = lane;
+            })
+            .catch(() => undefined),
+        );
+      }
+    }
+
+    await Promise.all(audio);
     this.transport.setTracks([...this.runtimes.values()]);
+
+    this.instrumentsReady = Promise.all(instruments).then(() => {
+      // The runtimes are mutated in place, but re-seat them so the transport re-bisects
+      // its cursors against the lanes that just appeared.
+      this.transport.setTracks([...this.runtimes.values()]);
+    });
   }
 
   setNotes(trackId: string, notes: Note[]): void {
