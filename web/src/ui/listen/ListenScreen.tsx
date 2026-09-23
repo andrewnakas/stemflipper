@@ -7,11 +7,12 @@
  */
 
 import { AUDIOSAW } from "../../config";
-import { job, reset } from "../../model/jobStore";
+import { attribution, job, reset } from "../../model/jobStore";
 import { assetLoad } from "../../model/playback";
 import { project as projectSignal } from "../../model/store";
 import { Button, Card, ProgressBar } from "../components/primitives";
 import { navigate } from "../router";
+import { AttributionLine } from "./Attribution";
 import { Downloads } from "./Downloads";
 import { SongFacts, SongHeader } from "./SongFacts";
 import { StemRow } from "./StemRow";
@@ -52,7 +53,9 @@ export function ListenScreen() {
       <div class="container" style={{ paddingTop: "var(--s5)", paddingBottom: "var(--s7)" }}>
         <div class="row wrap" style={{ gap: "var(--s3)", marginBottom: "var(--s3)" }}>
           <div class="stack">
-            <h2 style={{ fontSize: "var(--t-xl)" }}>{songTitle(project.song.source_file)}</h2>
+            <h2 style={{ fontSize: "var(--t-xl)" }}>
+              {attribution.value?.title || songTitle(project.song.source_file)}
+            </h2>
             <div style={{ marginTop: "var(--s2)" }}>
               <SongHeader project={project} />
             </div>
@@ -71,7 +74,8 @@ export function ListenScreen() {
             Open in Studio
           </Button>
         </div>
-        <p class="small dim" style={{ marginBottom: "var(--s4)" }}>
+        <AttributionLine />
+        <p class="small dim" style={{ marginBottom: "var(--s4)", marginTop: "var(--s2)" }}>
           Studio lets you edit the transcribed notes and blend the original stems against the
           synth and sampler rebuilds.
         </p>

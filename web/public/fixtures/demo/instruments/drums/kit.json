@@ -1,0 +1,232 @@
+{
+  "type": "drumkit",
+  "name": "drums",
+  "pieces": {
+    "kick": {
+      "gm": 36,
+      "gm_all": [
+        36
+      ],
+      "zones": [
+        {
+          "path": "instruments/drums/samples/kick_v1_rr1.wav",
+          "lovel": 0,
+          "hivel": 127,
+          "rr": 0
+        },
+        {
+          "path": "instruments/drums/samples/kick_v1_rr2.wav",
+          "lovel": 0,
+          "hivel": 127,
+          "rr": 1
+        },
+        {
+          "path": "instruments/drums/samples/kick_v1_rr3.wav",
+          "lovel": 0,
+          "hivel": 127,
+          "rr": 2
+        },
+        {
+          "path": "instruments/drums/samples/kick_v1_rr4.wav",
+          "lovel": 0,
+          "hivel": 127,
+          "rr": 3
+        }
+      ]
+    },
+    "snare": {
+      "gm": 38,
+      "gm_all": [
+        38
+      ],
+      "zones": [
+        {
+          "path": "instruments/drums/samples/snare_v1_rr1.wav",
+          "lovel": 0,
+          "hivel": 127,
+          "rr": 0
+        },
+        {
+          "path": "instruments/drums/samples/snare_v1_rr2.wav",
+          "lovel": 0,
+          "hivel": 127,
+          "rr": 1
+        },
+        {
+          "path": "instruments/drums/samples/snare_v1_rr3.wav",
+          "lovel": 0,
+          "hivel": 127,
+          "rr": 2
+        },
+        {
+          "path": "instruments/drums/samples/snare_v1_rr4.wav",
+          "lovel": 0,
+          "hivel": 127,
+          "rr": 3
+        }
+      ]
+    },
+    "toms": {
+      "gm": 45,
+      "gm_all": [
+        45,
+        47,
+        50
+      ],
+      "zones": [
+        {
+          "path": "instruments/drums/samples/toms_v1_rr1.wav",
+          "lovel": 0,
+          "hivel": 127,
+          "rr": 0
+        },
+        {
+          "path": "instruments/drums/samples/toms_v1_rr2.wav",
+          "lovel": 0,
+          "hivel": 127,
+          "rr": 1
+        },
+        {
+          "path": "instruments/drums/samples/toms_v1_rr3.wav",
+          "lovel": 0,
+          "hivel": 127,
+          "rr": 2
+        }
+      ]
+    },
+    "hh": {
+      "gm": 42,
+      "gm_all": [
+        42,
+        46
+      ],
+      "zones": [
+        {
+          "path": "instruments/drums/samples/hh_v1_rr1.wav",
+          "lovel": 0,
+          "hivel": 42,
+          "rr": 0
+        },
+        {
+          "path": "instruments/drums/samples/hh_v1_rr2.wav",
+          "lovel": 0,
+          "hivel": 42,
+          "rr": 1
+        },
+        {
+          "path": "instruments/drums/samples/hh_v1_rr3.wav",
+          "lovel": 0,
+          "hivel": 42,
+          "rr": 2
+        },
+        {
+          "path": "instruments/drums/samples/hh_v1_rr4.wav",
+          "lovel": 0,
+          "hivel": 42,
+          "rr": 3
+        },
+        {
+          "path": "instruments/drums/samples/hh_v2_rr1.wav",
+          "lovel": 43,
+          "hivel": 84,
+          "rr": 0
+        },
+        {
+          "path": "instruments/drums/samples/hh_v2_rr2.wav",
+          "lovel": 43,
+          "hivel": 84,
+          "rr": 1
+        },
+        {
+          "path": "instruments/drums/samples/hh_v3_rr1.wav",
+          "lovel": 85,
+          "hivel": 127,
+          "rr": 0
+        },
+        {
+          "path": "instruments/drums/samples/hh_v3_rr2.wav",
+          "lovel": 85,
+          "hivel": 127,
+          "rr": 1
+        }
+      ]
+    },
+    "ride": {
+      "gm": 51,
+      "gm_all": [
+        51
+      ],
+      "zones": [
+        {
+          "path": "instruments/drums/samples/ride_v1_rr1.wav",
+          "lovel": 0,
+          "hivel": 42,
+          "rr": 0
+        },
+        {
+          "path": "instruments/drums/samples/ride_v1_rr2.wav",
+          "lovel": 0,
+          "hivel": 42,
+          "rr": 1
+        },
+        {
+          "path": "instruments/drums/samples/ride_v1_rr3.wav",
+          "lovel": 0,
+          "hivel": 42,
+          "rr": 2
+        },
+        {
+          "path": "instruments/drums/samples/ride_v2_rr1.wav",
+          "lovel": 43,
+          "hivel": 84,
+          "rr": 0
+        },
+        {
+          "path": "instruments/drums/samples/ride_v2_rr2.wav",
+          "lovel": 43,
+          "hivel": 84,
+          "rr": 1
+        },
+        {
+          "path": "instruments/drums/samples/ride_v3_rr1.wav",
+          "lovel": 85,
+          "hivel": 127,
+          "rr": 0
+        },
+        {
+          "path": "instruments/drums/samples/ride_v3_rr2.wav",
+          "lovel": 85,
+          "hivel": 127,
+          "rr": 1
+        },
+        {
+          "path": "instruments/drums/samples/ride_v3_rr3.wav",
+          "lovel": 85,
+          "hivel": 127,
+          "rr": 2
+        },
+        {
+          "path": "instruments/drums/samples/ride_v3_rr4.wav",
+          "lovel": 85,
+          "hivel": 127,
+          "rr": 3
+        }
+      ]
+    },
+    "crash": {
+      "gm": 49,
+      "gm_all": [
+        49,
+        57
+      ],
+      "zones": [
+        {
+          "path": "instruments/drums/samples/crash_v1_rr1.wav",
+          "lovel": 0,
+          "hivel": 127,
+          "rr": 0
+        }
+      ]
+    }
+  }
+}

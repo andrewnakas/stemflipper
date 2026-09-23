@@ -33,6 +33,18 @@ export const options = signal<{ preset: Preset; six: boolean; presetTouched: boo
 /** Every phase the current run passed through — the smoke test asserts on this. */
 export const jobLog = signal<string[]>([]);
 
+export interface Attribution {
+  title: string;
+  artist: string;
+  license: string;
+  licenseUrl: string;
+  sourceUrl: string;
+  note?: string;
+}
+
+/** Set when the loaded project is a demo someone else made the music for. */
+export const attribution = signal<Attribution | null>(null);
+
 const RESUME_KEY = "sf.job";
 const RESULT_KEY = "sf.result";
 
@@ -131,6 +143,7 @@ export async function startJob(file: File): Promise<void> {
   const signal = controller.signal;
   lastFile = file;
   jobLog.value = [];
+  attribution.value = null;
   void resumeAudio();
 
   try {
@@ -244,6 +257,8 @@ export async function openFixture(name: string): Promise<void> {
   const baseUrl = `${import.meta.env.BASE_URL}fixtures/${name}`.replace(/\/+$/, "");
   const source: AssetSource = { kind: "static", baseUrl };
   const project = await fetchJson<Project>(`${baseUrl}/project.json`);
+  // Someone else wrote the music; credit them wherever it plays.
+  attribution.value = await fetchJson<Attribution>(`${baseUrl}/attribution.json`).catch(() => null);
   dispatch({ type: "assets", loaded: 0, total: 0 });
   await openProject(project, source, (loaded, total) => dispatch({ type: "assets", loaded, total }));
   dispatch({ type: "ready", result: { project, source, zipUrl: null, zipBytes: null, expiresAt: null } });

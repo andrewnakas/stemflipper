@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DecentSampler minVersion="1.0.0" name="bass">
+  <groups>
+    <group attack="0.0050" decay="0.1000" sustain="1.000" release="0.2500">
+      <sample path="samples/bass_031_v1.wav" rootNote="31" loNote="0" hiNote="32" loVel="0" hiVel="127" />
+      <sample path="samples/bass_033_v1.wav" rootNote="33" loNote="33" hiNote="35" loVel="0" hiVel="127" loopStart="44478" loopEnd="50892" loopEnabled="true" loopCrossfade="441" />
+      <sample path="samples/bass_038_v1.wav" rootNote="38" loNote="36" hiNote="39" loVel="0" hiVel="127" />
+      <sample path="samples/bass_040_v1.wav" rootNote="40" loNote="40" hiNote="40" loVel="0" hiVel="127" />
+      <sample path="samples/bass_041_v1.wav" rootNote="41" loNote="41" hiNote="127" loVel="0" hiVel="127" />
+    </group>
+  </groups>
+</DecentSampler>

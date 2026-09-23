@@ -146,6 +146,14 @@ describe("classifyError", () => {
     expect(classifyError("Falling back to IP-based quotas (InvalidRepoToken)").code).toBe("auth");
   });
 
+  it("explains an expired ZeroGPU proxy token as retryable", () => {
+    // Hit for real while building the demo fixture: a 172 s upload outlived the token.
+    const e = classifyError("Expired ZeroGPU proxy token");
+    expect(e.code).toBe("backend");
+    expect(e.recovery).toContain("retry");
+    expect(e.message).toMatch(/again/i);
+  });
+
   it("maps app.py's own refusals", () => {
     expect(classifyError("That file is 9.4 minutes; please keep songs under 8 minutes for this demo.").code).toBe("too_long");
     expect(classifyError("Could not read that audio file. Error opening …").code).toBe("undecodable");

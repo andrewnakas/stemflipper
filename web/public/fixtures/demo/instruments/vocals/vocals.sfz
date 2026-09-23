@@ -1,0 +1,13 @@
+// StemFlipper instrument: vocals
+// Generated from transcribed note boundaries. Load in sfizz, Sforzando or DecentSampler.
+<control>
+default_path=samples/
+
+<global>
+ampeg_attack=0.0050
+ampeg_decay=0.1000
+ampeg_sustain=100.0
+ampeg_release=0.2500
+
+<region> sample=vocals_068_v1.wav lokey=0 hikey=77 pitch_keycenter=68 lovel=1 hivel=127
+<region> sample=vocals_086_v1.wav lokey=78 hikey=127 pitch_keycenter=86 lovel=1 hivel=127

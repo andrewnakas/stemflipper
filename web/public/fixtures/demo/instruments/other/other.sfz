@@ -1,0 +1,43 @@
+// StemFlipper sliced instrument: other
+// Generated from transcribed note boundaries; load in sfizz, Sforzando or DecentSampler.
+<control>
+default_path=samples/
+
+<global>
+ampeg_release=0.4
+
+<region> sample=other_028.wav lokey=0 hikey=29 pitch_keycenter=28
+<region> sample=other_031.wav lokey=30 hikey=31 pitch_keycenter=31
+<region> sample=other_032.wav lokey=32 hikey=32 pitch_keycenter=32
+<region> sample=other_033.wav lokey=33 hikey=34 pitch_keycenter=33
+<region> sample=other_035.wav lokey=35 hikey=35 pitch_keycenter=35
+<region> sample=other_036.wav lokey=36 hikey=37 pitch_keycenter=36
+<region> sample=other_038.wav lokey=38 hikey=39 pitch_keycenter=38
+<region> sample=other_040.wav lokey=40 hikey=41 pitch_keycenter=40
+<region> sample=other_043.wav lokey=42 hikey=44 pitch_keycenter=43
+<region> sample=other_045.wav lokey=45 hikey=45 pitch_keycenter=45
+<region> sample=other_046.wav lokey=46 hikey=46 pitch_keycenter=46
+<region> sample=other_047.wav lokey=47 hikey=47 pitch_keycenter=47
+<region> sample=other_048.wav lokey=48 hikey=49 pitch_keycenter=48
+<region> sample=other_050.wav lokey=50 hikey=51 pitch_keycenter=50
+<region> sample=other_052.wav lokey=52 hikey=53 pitch_keycenter=52
+<region> sample=other_055.wav lokey=54 hikey=55 pitch_keycenter=55
+<region> sample=other_056.wav lokey=56 hikey=56 pitch_keycenter=56
+<region> sample=other_057.wav lokey=57 hikey=57 pitch_keycenter=57
+<region> sample=other_058.wav lokey=58 hikey=58 pitch_keycenter=58
+<region> sample=other_059.wav lokey=59 hikey=60 pitch_keycenter=59
+<region> sample=other_061.wav lokey=61 hikey=61 pitch_keycenter=61
+<region> sample=other_062.wav lokey=62 hikey=63 pitch_keycenter=62
+<region> sample=other_064.wav lokey=64 hikey=65 pitch_keycenter=64
+<region> sample=other_067.wav lokey=66 hikey=68 pitch_keycenter=67
+<region> sample=other_069.wav lokey=69 hikey=69 pitch_keycenter=69
+<region> sample=other_070.wav lokey=70 hikey=70 pitch_keycenter=70
+<region> sample=other_071.wav lokey=71 hikey=72 pitch_keycenter=71
+<region> sample=other_074.wav lokey=73 hikey=74 pitch_keycenter=74
+<region> sample=other_075.wav lokey=75 hikey=75 pitch_keycenter=75
+<region> sample=other_076.wav lokey=76 hikey=77 pitch_keycenter=76
+<region> sample=other_079.wav lokey=78 hikey=80 pitch_keycenter=79
+<region> sample=other_081.wav lokey=81 hikey=84 pitch_keycenter=81
+<region> sample=other_088.wav lokey=85 hikey=90 pitch_keycenter=88
+<region> sample=other_093.wav lokey=91 hikey=96 pitch_keycenter=93
+<region> sample=other_100.wav lokey=97 hikey=127 pitch_keycenter=100

@@ -12,3 +12,4 @@ flagged/
 web/node_modules/
 web/dist/
 web/public/fixtures/song/
+# fixtures/demo IS committed: it is the example the landing page plays.

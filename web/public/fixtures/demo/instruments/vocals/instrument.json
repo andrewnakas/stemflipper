@@ -1,0 +1,34 @@
+{
+  "type": "multisample",
+  "name": "vocals",
+  "amp_env": {
+    "a": 0.005,
+    "d": 0.1,
+    "s": 1.0,
+    "r": 0.25
+  },
+  "zones": [
+    {
+      "path": "instruments/vocals/samples/vocals_068_v1.wav",
+      "root": 68,
+      "lo": 0,
+      "hi": 77,
+      "lovel": 0,
+      "hivel": 127,
+      "rr": 0,
+      "gain_db": 0.0,
+      "loop": null
+    },
+    {
+      "path": "instruments/vocals/samples/vocals_086_v1.wav",
+      "root": 86,
+      "lo": 78,
+      "hi": 127,
+      "lovel": 0,
+      "hivel": 127,
+      "rr": 0,
+      "gain_db": 0.0,
+      "loop": null
+    }
+  ]
+}

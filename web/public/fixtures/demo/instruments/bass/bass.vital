@@ -1,0 +1,21 @@
+{
+  "synth_version": "1.5.5",
+  "preset_name": "StemFlipper warm-start",
+  "author": "StemFlipper",
+  "comments": "Best-effort synth-fit warm-start \u2014 an editable starting point, not a clone.",
+  "preset_style": "",
+  "settings": {
+    "osc_1_on": 1.0,
+    "osc_1_level": 0.7,
+    "osc_2_on": 0.0,
+    "osc_2_level": 0.0,
+    "filter_1_on": 1.0,
+    "filter_1_cutoff": 75.665,
+    "filter_1_resonance": 0.3,
+    "env_1_attack": 0.15,
+    "env_1_decay": 0.3,
+    "env_1_sustain": 0.6405884623527527,
+    "env_1_release": 0.4202942311763763,
+    "volume": 0.75
+  }
+}

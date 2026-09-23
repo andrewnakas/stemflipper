@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DecentSampler minVersion="1.0.0" name="drums">
+  <groups>
+    <group name="kick" attack="0.0050" decay="0.1000" sustain="1.000" release="0.2500">
+      <sample path="samples/kick_v1_rr1.wav" rootNote="36" loNote="36" hiNote="36" loVel="0" hiVel="127" trigger="attack" />
+      <sample path="samples/kick_v1_rr2.wav" rootNote="36" loNote="36" hiNote="36" loVel="0" hiVel="127" trigger="attack" />
+      <sample path="samples/kick_v1_rr3.wav" rootNote="36" loNote="36" hiNote="36" loVel="0" hiVel="127" trigger="attack" />
+      <sample path="samples/kick_v1_rr4.wav" rootNote="36" loNote="36" hiNote="36" loVel="0" hiVel="127" trigger="attack" />
+    </group>
+    <group name="snare" attack="0.0050" decay="0.1000" sustain="1.000" release="0.2500">
+      <sample path="samples/snare_v1_rr1.wav" rootNote="38" loNote="38" hiNote="38" loVel="0" hiVel="127" trigger="attack" />
+      <sample path="samples/snare_v1_rr2.wav" rootNote="38" loNote="38" hiNote="38" loVel="0" hiVel="127" trigger="attack" />
+      <sample path="samples/snare_v1_rr3.wav" rootNote="38" loNote="38" hiNote="38" loVel="0" hiVel="127" trigger="attack" />
+      <sample path="samples/snare_v1_rr4.wav" rootNote="38" loNote="38" hiNote="38" loVel="0" hiVel="127" trigger="attack" />
+    </group>
+    <group name="toms" attack="0.0050" decay="0.1000" sustain="1.000" release="0.2500">
+      <sample path="samples/toms_v1_rr1.wav" rootNote="45" loNote="45" hiNote="45" loVel="0" hiVel="127" trigger="attack" />
+      <sample path="samples/toms_v1_rr2.wav" rootNote="45" loNote="45" hiNote="45" loVel="0" hiVel="127" trigger="attack" />
+      <sample path="samples/toms_v1_rr3.wav" rootNote="45" loNote="45" hiNote="45" loVel="0" hiVel="127" trigger="attack" />
+    </group>
+    <group name="hh" attack="0.0050" decay="0.1000" sustain="1.000" release="0.2500">
+      <sample path="samples/hh_v1_rr1.wav" rootNote="42" loNote="42" hiNote="42" loVel="0" hiVel="42" trigger="attack" />
+      <sample path="samples/hh_v1_rr2.wav" rootNote="42" loNote="42" hiNote="42" loVel="0" hiVel="42" trigger="attack" />
+      <sample path="samples/hh_v1_rr3.wav" rootNote="42" loNote="42" hiNote="42" loVel="0" hiVel="42" trigger="attack" />
+      <sample path="samples/hh_v1_rr4.wav" rootNote="42" loNote="42" hiNote="42" loVel="0" hiVel="42" trigger="attack" />
+      <sample path="samples/hh_v2_rr1.wav" rootNote="42" loNote="42" hiNote="42" loVel="43" hiVel="84" trigger="attack" />
+      <sample path="samples/hh_v2_rr2.wav" rootNote="42" loNote="42" hiNote="42" loVel="43" hiVel="84" trigger="attack" />
+      <sample path="samples/hh_v3_rr1.wav" rootNote="42" loNote="42" hiNote="42" loVel="85" hiVel="127" trigger="attack" />
+      <sample path="samples/hh_v3_rr2.wav" rootNote="42" loNote="42" hiNote="42" loVel="85" hiVel="127" trigger="attack" />
+    </group>
+    <group name="ride" attack="0.0050" decay="0.1000" sustain="1.000" release="0.2500">
+      <sample path="samples/ride_v1_rr1.wav" rootNote="51" loNote="51" hiNote="51" loVel="0" hiVel="42" trigger="attack" />
+      <sample path="samples/ride_v1_rr2.wav" rootNote="51" loNote="51" hiNote="51" loVel="0" hiVel="42" trigger="attack" />
+      <sample path="samples/ride_v1_rr3.wav" rootNote="51" loNote="51" hiNote="51" loVel="0" hiVel="42" trigger="attack" />
+      <sample path="samples/ride_v2_rr1.wav" rootNote="51" loNote="51" hiNote="51" loVel="43" hiVel="84" trigger="attack" />
+      <sample path="samples/ride_v2_rr2.wav" rootNote="51" loNote="51" hiNote="51" loVel="43" hiVel="84" trigger="attack" />
+      <sample path="samples/ride_v3_rr1.wav" rootNote="51" loNote="51" hiNote="51" loVel="85" hiVel="127" trigger="attack" />
+      <sample path="samples/ride_v3_rr2.wav" rootNote="51" loNote="51" hiNote="51" loVel="85" hiVel="127" trigger="attack" />
+      <sample path="samples/ride_v3_rr3.wav" rootNote="51" loNote="51" hiNote="51" loVel="85" hiVel="127" trigger="attack" />
+      <sample path="samples/ride_v3_rr4.wav" rootNote="51" loNote="51" hiNote="51" loVel="85" hiVel="127" trigger="attack" />
+    </group>
+    <group name="crash" attack="0.0050" decay="0.1000" sustain="1.000" release="0.2500">
+      <sample path="samples/crash_v1_rr1.wav" rootNote="49" loNote="49" hiNote="49" loVel="0" hiVel="127" trigger="attack" />
+    </group>
+  </groups>
+</DecentSampler>

@@ -1,20 +1,30 @@
 /** The front door: what this is, one obvious control, and an example you can hear now. */
 
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { AUDIOSAW, DEMO_FIXTURE, LIMITS } from "../../config";
 import { auth, tier } from "../../model/auth";
-import { job, openFixture, pickFile } from "../../model/jobStore";
+import { attribution, job, openFixture, pickFile, type Attribution } from "../../model/jobStore";
 import { dailyBudgetS, estimateGpuSeconds, formatSeconds, songsPerDay } from "../../model/quota";
 import { Button, Card } from "../components/primitives";
 import { Notice } from "../components/Notice";
 import { toast } from "../components/Toast";
 import { navigate } from "../router";
+import { fetchJson } from "../../api/assets";
 import { DropVeil, DropZone } from "./DropZone";
 
 const TYPICAL_SONG_S = 210; // 3:30, for the "how many songs a day" sums
 
 export function Landing() {
   const [loadingDemo, setLoadingDemo] = useState(false);
+
+  // Name the example before anyone clicks it: "Hear an example" is a weaker invitation
+  // than hearing whose song it is. Cheap — a few hundred bytes of JSON.
+  useEffect(() => {
+    if (attribution.value) return;
+    void fetchJson<Attribution>(`${import.meta.env.BASE_URL}fixtures/${DEMO_FIXTURE}/attribution.json`)
+      .then((a) => (attribution.value = a))
+      .catch(() => undefined);
+  }, []);
 
   const take = async (file: File) => {
     await pickFile(file);
@@ -48,6 +58,14 @@ export function Landing() {
             {loadingDemo ? "Loading…" : "▶ Hear an example"}
           </Button>
         </div>
+        {attribution.value ? (
+          <p class="xs dim" style={{ marginTop: "var(--s2)" }}>
+            “{attribution.value.title}” by {attribution.value.artist} ·{" "}
+            <a href={attribution.value.licenseUrl} rel="license noopener">
+              {attribution.value.license}
+            </a>
+          </p>
+        ) : null}
       </section>
 
       <section class="section container">

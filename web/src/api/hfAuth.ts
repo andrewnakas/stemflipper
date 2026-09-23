@@ -63,22 +63,38 @@ export async function challengeFor(verifier: string): Promise<string> {
   return base64url(digest);
 }
 
+/** Pure URL construction, so the parameters can be asserted without a browser. */
+export function authorizeUrl(opts: {
+  clientId: string;
+  redirectUri: string;
+  state: string;
+  challenge: string;
+  scopes?: string;
+}): string {
+  const params = new URLSearchParams({
+    client_id: opts.clientId,
+    redirect_uri: opts.redirectUri,
+    response_type: "code",
+    scope: opts.scopes ?? HF_SCOPES,
+    state: opts.state,
+    code_challenge: opts.challenge,
+    code_challenge_method: "S256",
+  });
+  return `${AUTHORIZE}?${params}`;
+}
+
 /** Build the authorize URL and remember the PKCE verifier for the exchange. */
 export async function beginLogin(): Promise<string> {
   const verifier = randomString(48);
   const state = randomString(16);
   sessionStorage.setItem(VERIFIER_KEY, verifier);
   sessionStorage.setItem(STATE_KEY, state);
-  const params = new URLSearchParams({
-    client_id: HF_CLIENT_ID,
-    redirect_uri: redirectUri(),
-    response_type: "code",
-    scope: HF_SCOPES,
+  return authorizeUrl({
+    clientId: HF_CLIENT_ID,
+    redirectUri: redirectUri(),
     state,
-    code_challenge: await challengeFor(verifier),
-    code_challenge_method: "S256",
+    challenge: await challengeFor(verifier),
   });
-  return `${AUTHORIZE}?${params}`;
 }
 
 export async function login(): Promise<void> {

@@ -1,0 +1,16 @@
+// StemFlipper instrument: bass
+// Generated from transcribed note boundaries. Load in sfizz, Sforzando or DecentSampler.
+<control>
+default_path=samples/
+
+<global>
+ampeg_attack=0.0050
+ampeg_decay=0.1000
+ampeg_sustain=100.0
+ampeg_release=0.2500
+
+<region> sample=bass_031_v1.wav lokey=0 hikey=32 pitch_keycenter=31 lovel=1 hivel=127
+<region> sample=bass_033_v1.wav lokey=33 hikey=35 pitch_keycenter=33 lovel=1 hivel=127 loop_mode=loop_continuous loop_start=44478 loop_end=50892
+<region> sample=bass_038_v1.wav lokey=36 hikey=39 pitch_keycenter=38 lovel=1 hivel=127
+<region> sample=bass_040_v1.wav lokey=40 hikey=40 pitch_keycenter=40 lovel=1 hivel=127
+<region> sample=bass_041_v1.wav lokey=41 hikey=127 pitch_keycenter=41 lovel=1 hivel=127

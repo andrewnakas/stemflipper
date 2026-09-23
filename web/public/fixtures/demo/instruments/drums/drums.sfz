@@ -1,0 +1,53 @@
+// StemFlipper instrument: drums
+// Generated from transcribed note boundaries. Load in sfizz, Sforzando or DecentSampler.
+<control>
+default_path=samples/
+
+<global>
+ampeg_attack=0.0050
+ampeg_decay=0.1000
+ampeg_sustain=100.0
+ampeg_release=0.2500
+loop_mode=one_shot
+
+// kick
+<region> sample=kick_v1_rr1.wav key=36 pitch_keycenter=36 lovel=1 hivel=127 seq_length=4 seq_position=1
+<region> sample=kick_v1_rr2.wav key=36 pitch_keycenter=36 lovel=1 hivel=127 seq_length=4 seq_position=2
+<region> sample=kick_v1_rr3.wav key=36 pitch_keycenter=36 lovel=1 hivel=127 seq_length=4 seq_position=3
+<region> sample=kick_v1_rr4.wav key=36 pitch_keycenter=36 lovel=1 hivel=127 seq_length=4 seq_position=4
+
+// snare
+<region> sample=snare_v1_rr1.wav key=38 pitch_keycenter=38 lovel=1 hivel=127 seq_length=4 seq_position=1
+<region> sample=snare_v1_rr2.wav key=38 pitch_keycenter=38 lovel=1 hivel=127 seq_length=4 seq_position=2
+<region> sample=snare_v1_rr3.wav key=38 pitch_keycenter=38 lovel=1 hivel=127 seq_length=4 seq_position=3
+<region> sample=snare_v1_rr4.wav key=38 pitch_keycenter=38 lovel=1 hivel=127 seq_length=4 seq_position=4
+
+// toms
+<region> sample=toms_v1_rr1.wav key=45 pitch_keycenter=45 lovel=1 hivel=127 seq_length=3 seq_position=1
+<region> sample=toms_v1_rr2.wav key=45 pitch_keycenter=45 lovel=1 hivel=127 seq_length=3 seq_position=2
+<region> sample=toms_v1_rr3.wav key=45 pitch_keycenter=45 lovel=1 hivel=127 seq_length=3 seq_position=3
+
+// hh
+<region> sample=hh_v1_rr1.wav key=42 pitch_keycenter=42 lovel=1 hivel=42 seq_length=4 seq_position=1
+<region> sample=hh_v1_rr2.wav key=42 pitch_keycenter=42 lovel=1 hivel=42 seq_length=4 seq_position=2
+<region> sample=hh_v1_rr3.wav key=42 pitch_keycenter=42 lovel=1 hivel=42 seq_length=4 seq_position=3
+<region> sample=hh_v1_rr4.wav key=42 pitch_keycenter=42 lovel=1 hivel=42 seq_length=4 seq_position=4
+<region> sample=hh_v2_rr1.wav key=42 pitch_keycenter=42 lovel=43 hivel=84 seq_length=4 seq_position=1
+<region> sample=hh_v2_rr2.wav key=42 pitch_keycenter=42 lovel=43 hivel=84 seq_length=4 seq_position=2
+<region> sample=hh_v3_rr1.wav key=42 pitch_keycenter=42 lovel=85 hivel=127 seq_length=4 seq_position=1
+<region> sample=hh_v3_rr2.wav key=42 pitch_keycenter=42 lovel=85 hivel=127 seq_length=4 seq_position=2
+
+// ride
+<region> sample=ride_v1_rr1.wav key=51 pitch_keycenter=51 lovel=1 hivel=42 seq_length=4 seq_position=1
+<region> sample=ride_v1_rr2.wav key=51 pitch_keycenter=51 lovel=1 hivel=42 seq_length=4 seq_position=2
+<region> sample=ride_v1_rr3.wav key=51 pitch_keycenter=51 lovel=1 hivel=42 seq_length=4 seq_position=3
+<region> sample=ride_v2_rr1.wav key=51 pitch_keycenter=51 lovel=43 hivel=84 seq_length=4 seq_position=1
+<region> sample=ride_v2_rr2.wav key=51 pitch_keycenter=51 lovel=43 hivel=84 seq_length=4 seq_position=2
+<region> sample=ride_v3_rr1.wav key=51 pitch_keycenter=51 lovel=85 hivel=127 seq_length=4 seq_position=1
+<region> sample=ride_v3_rr2.wav key=51 pitch_keycenter=51 lovel=85 hivel=127 seq_length=4 seq_position=2
+<region> sample=ride_v3_rr3.wav key=51 pitch_keycenter=51 lovel=85 hivel=127 seq_length=4 seq_position=3
+<region> sample=ride_v3_rr4.wav key=51 pitch_keycenter=51 lovel=85 hivel=127 seq_length=4 seq_position=4
+
+// crash
+<region> sample=crash_v1_rr1.wav key=49 pitch_keycenter=49 lovel=1 hivel=127
+

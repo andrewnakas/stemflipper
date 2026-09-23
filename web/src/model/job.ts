@@ -322,6 +322,18 @@ export function classifyError(raw: unknown): JobError {
     };
   }
 
+  if (t.includes("expired zerogpu") || t.includes("proxy token")) {
+    // Seen on a real run: a slow upload outlived the token the Hub attaches to the
+    // request, so the GPU stage refused it. Nothing is wrong with the song or the
+    // account — running it again works.
+    return {
+      code: "backend",
+      message: "The server's session expired while your song was uploading. Running it again usually works.",
+      detail: text,
+      recovery: ["retry"],
+    };
+  }
+
   if (t.includes("ip-based quota") || t.includes("invalidrepotoken") || t.includes("invalid token") || t.includes("401")) {
     return {
       code: "auth",

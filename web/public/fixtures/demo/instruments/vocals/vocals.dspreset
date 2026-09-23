@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DecentSampler minVersion="1.0.0" name="vocals">
+  <groups>
+    <group attack="0.0050" decay="0.1000" sustain="1.000" release="0.2500">
+      <sample path="samples/vocals_068_v1.wav" rootNote="68" loNote="0" hiNote="77" loVel="0" hiVel="127" />
+      <sample path="samples/vocals_086_v1.wav" rootNote="86" loNote="78" hiNote="127" loVel="0" hiVel="127" />
+    </group>
+  </groups>
+</DecentSampler>

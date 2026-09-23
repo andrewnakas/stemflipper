@@ -49,7 +49,7 @@ export const AUDIOSAW = {
   convert: "https://audiosaw.com/tools",
 };
 
-/** The fixture behind "Hear an example". Swapped to the real CC-licensed song in N3. */
-export const DEMO_FIXTURE = "ci";
+/** The fixture behind "Hear an example": a real CC0 song run through the real pipeline. */
+export const DEMO_FIXTURE = "demo";
 
 export const CANONICAL_URL = "https://audiosaw.com/stemflipper/";
