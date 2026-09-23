@@ -82,3 +82,30 @@ describe("size estimate", () => {
     expect(renderedBytes(240, 44100)).toBeGreaterThan(40e6);
   });
 });
+
+describe("toggling a selection", () => {
+  /**
+   * The component's toggle, as a pure function of the previous set. Written out here
+   * because the bug it guards against is invisible in a single click: two ticks in one
+   * tick both read the same stale state, and the second undoes the first.
+   */
+  const toggle = (prev: Set<string>, k: string): Set<string> => {
+    const next = new Set(prev);
+    if (next.has(k)) next.delete(k);
+    else next.add(k);
+    return next;
+  };
+
+  it("keeps both when two lanes are ticked in a row", () => {
+    let s = new Set<string>(["vocals:original"]);
+    s = toggle(s, "vocals:synth");
+    s = toggle(s, "vocals:sampler");
+    expect([...s].sort()).toEqual(["vocals:original", "vocals:sampler", "vocals:synth"]);
+  });
+
+  it("still unticks", () => {
+    let s = new Set<string>(["a", "b"]);
+    s = toggle(s, "a");
+    expect([...s]).toEqual(["b"]);
+  });
+});

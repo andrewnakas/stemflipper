@@ -39,11 +39,15 @@ export function SendToEditor({ result }: { result: JobResult }) {
 
   const key = (trackId: string, lane: LaneId) => `${trackId}:${lane}`;
   const toggle = (trackId: string, lane: LaneId) => {
-    const next = new Set(chosen);
-    const k = key(trackId, lane);
-    if (next.has(k)) next.delete(k);
-    else next.add(k);
-    setChosen(next);
+    // Derive from the previous state, not from the closure's copy: two ticks before a
+    // re-render both read the same stale set, and the second silently undoes the first.
+    setChosen((prev) => {
+      const next = new Set(prev);
+      const k = key(trackId, lane);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
   };
 
   const items: LaneRef[] = rows.flatMap((r) =>
