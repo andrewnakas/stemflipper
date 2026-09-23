@@ -5,8 +5,11 @@
  * too: someone who only wants the acapella should not have to download 200 MB to get it.
  */
 
+import { useState } from "preact/hooks";
 import { assetUrl } from "../../api/assets";
 import { bundleGroups, countFiles } from "../../model/bundle";
+import { writeMidi } from "../../export/midi";
+import { notesByTrack } from "../../model/store";
 import type { JobResult } from "../../model/job";
 import { formatBytes } from "../../model/preflight";
 import { Button, Card } from "../components/primitives";
@@ -15,6 +18,10 @@ import { Disclosure } from "../components/Disclosure";
 export function Downloads({ result }: { result: JobResult }) {
   const groups = bundleGroups(result.project);
   const total = countFiles(result.project);
+  // A run done in the browser has notes but no .mid files on disk. MIDI is the headline
+  // promise, so generate it here rather than making people go through Studio's exporter.
+  const hasMidiFiles = groups.some((g) => g.id === "midi");
+  const noteCount = Object.values(notesByTrack.value).reduce((n, list) => n + list.length, 0);
 
   return (
     <Card class="stack" style={{ gap: "var(--s3)" }}>
@@ -31,8 +38,10 @@ export function Downloads({ result }: { result: JobResult }) {
           </p>
         </>
       ) : (
-        <p class="small dim">Pick what you need — this example is served as individual files.</p>
+        <p class="small dim">Pick what you need — these are files on this device, not a download.</p>
       )}
+
+      {!hasMidiFiles && noteCount > 0 ? <MidiButton project={result.project} /> : null}
 
       {groups.map((g) => (
         <Disclosure key={g.id} summary={<span><b>{g.title}</b> <span class="dim small">· {g.files.length}</span></span>}>
@@ -50,6 +59,34 @@ export function Downloads({ result }: { result: JobResult }) {
         </Disclosure>
       ))}
     </Card>
+  );
+}
+
+/** Build the multitrack MIDI from the notes currently loaded. */
+function MidiButton({ project }: { project: JobResult["project"] }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  if (url) {
+    return (
+      <Button href={url} download={`${project.song.source_file.replace(/\.[^.]+$/, "")}.mid`} variant="primary">
+        Save the MIDI
+      </Button>
+    );
+  }
+  return (
+    <Button
+      onClick={() => {
+        const tracks = project.tracks.map((t) => ({
+          name: t.id,
+          isDrum: t.kind === "drums",
+          notes: notesByTrack.value[t.id] || [],
+        }));
+        const bytes = writeMidi(tracks, project.grid, project.sections);
+        setUrl(URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: "audio/midi" })));
+      }}
+    >
+      Make the MIDI file
+    </Button>
   );
 }
 

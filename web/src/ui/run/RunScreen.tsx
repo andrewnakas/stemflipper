@@ -1,13 +1,14 @@
 /** Everything between choosing a file and having a result. */
 
 import { LIMITS } from "../../config";
-import { job, cancelJob, reset, startPending } from "../../model/jobStore";
+import { job, cancelJob, options, reset, startPending } from "../../model/jobStore";
 import { formatBytes, formatDuration } from "../../model/preflight";
 import { Button, Card } from "../components/primitives";
 import { navigate } from "../router";
 import { AdvancedPanel } from "./AdvancedPanel";
 import { ErrorPanel } from "./ErrorPanel";
 import { PresetPicker } from "./PresetPicker";
+import { WherePicker } from "./WherePicker";
 import { ProgressSteps } from "./ProgressSteps";
 import { QuotaNote } from "../account/QuotaNote";
 
@@ -50,15 +51,20 @@ export function RunScreen() {
 
             {phase.kind === "picked" ? (
               <>
-                <PresetPicker file={phase.file} />
-                <QuotaNote file={phase.file} />
+                <WherePicker file={phase.file} />
+                {options.value.where === "server" ? (
+                  <>
+                    <PresetPicker file={phase.file} />
+                    <QuotaNote file={phase.file} />
+                  </>
+                ) : null}
                 <Button
                   variant="primary"
                   size="lg"
                   block
                   onClick={startPending}
                 >
-                  Flip it
+                  {options.value.where === "browser" ? "Flip it here" : "Flip it"}
                 </Button>
                 <AdvancedPanel />
               </>
@@ -93,8 +99,10 @@ export function RunScreen() {
 
         {phase.kind === "picked" ? (
           <p class="xs dim center" style={{ marginTop: "var(--s4)" }}>
-            Your song is uploaded to a Hugging Face Space, processed there, and deleted within 6
-            hours. Up to {LIMITS.maxMinutes} minutes and {LIMITS.maxBytesLabel} per file.
+            {options.value.where === "browser"
+              ? "Everything happens on this device — the file is never sent anywhere. Closing the tab cancels it."
+              : "Your song is uploaded to a Hugging Face Space, processed there, and deleted within 6 hours."}{" "}
+            Up to {LIMITS.maxMinutes} minutes and {LIMITS.maxBytesLabel} per file.
           </p>
         ) : null}
       </div>

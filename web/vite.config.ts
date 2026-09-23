@@ -5,6 +5,9 @@ import preact from "@preact/preset-vite";
 export default defineConfig({
   base: "/stemflipper/",
   plugins: [preact()],
+  // The separation worker loads onnxruntime with importScripts, which a module worker
+  // cannot do — and bundling onnxruntime instead drags a 25 MB wasm into dist.
+  worker: { format: "iife" },
   build: {
     outDir: "dist",
     sourcemap: true,

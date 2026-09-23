@@ -16,21 +16,31 @@ import { resumeAudio } from "../engine/context";
 import { BUNDLE_TTL_H, type Preset } from "../config";
 import { navigate } from "../ui/router";
 import { effectiveToken, tier } from "./auth";
-import { classifyError, isJobError, reduce, type FileMeta, type JobEvent, type JobError, type JobPhase, type JobResult } from "./job";
+import { classifyError, isJobError, reduce, type FileMeta, type JobEvent, type JobError, type JobPhase, type JobResult, type Step } from "./job";
 import { applyMixerNow, openProject } from "./playback";
 import { getSong, releaseSource, saveSong, sourceFor } from "./persist";
 import { openBundleFile } from "./zipLoader";
 import { preflight } from "./preflight";
 import { estimateWallSeconds, pickPreset } from "./quota";
+import { localCapability, localEstimateSeconds } from "../local/capability";
 import { backend, mixer, notesByTrack, spaceId } from "./store";
 import type { Project } from "./types";
 
 export const job = signal<JobPhase>({ kind: "idle" });
-export const options = signal<{ preset: Preset; six: boolean; presetTouched: boolean }>({
+export type RunWhere = "browser" | "server";
+
+export const options = signal<{ preset: Preset; six: boolean; presetTouched: boolean; where: RunWhere }>({
   preset: "balanced",
   six: false,
   presetTouched: false,
+  // Default decided per device in pickFile: local is unlimited and private, but only
+  // sensible where the browser can use a GPU.
+  where: "server",
 });
+
+export function setWhere(where: RunWhere): void {
+  options.value = { ...options.value, where };
+}
 
 /** Every phase the current run passed through — the smoke test asserts on this. */
 export const jobLog = signal<string[]>([]);
@@ -109,7 +119,70 @@ export async function pickFile(file: File): Promise<void> {
   }
   dispatch({ type: "pick", file: meta });
   suggestPreset(meta);
+  if (!options.value.presetTouched) {
+    options.value = { ...options.value, where: localCapability().recommended ? "browser" : "server" };
+  }
   navigate("run");
+}
+
+/**
+ * Run the whole thing on this machine: no account, no queue, no daily limit, and the
+ * audio never leaves the device. Two stems rather than four, and no samples — that part
+ * needs the server.
+ */
+export async function startLocalJob(file: File): Promise<void> {
+  controller?.abort();
+  controller = new AbortController();
+  const signal = controller.signal;
+  lastFile = file;
+  jobLog.value = [];
+  attribution.value = null;
+  void resumeAudio();
+
+  const STEPS: Record<string, Step> = {
+    decode: "load",
+    analyse: "analyze",
+    model: "separate",
+    separate: "separate",
+    transcribe: "transcribe",
+    assemble: "package",
+  };
+
+  try {
+    const { meta, problem } = await preflight(file);
+    if (problem) throw problem;
+    dispatch({ type: "pick", file: meta });
+    expectedS = localEstimateSeconds(meta.durationS ?? 210);
+
+    const { runLocally } = await import("../local/pipeline");
+    const result = await runLocally(
+      file,
+      (p) =>
+        dispatch({
+          type: "local",
+          step: STEPS[p.phase] ?? "separate",
+          pct: p.pct == null ? null : p.pct / 100,
+          desc: p.detail,
+          now: Date.now(),
+        }),
+      signal,
+    );
+
+    releaseCurrentBlobSource();
+    blobSource = result.dispose;
+    dispatch({ type: "assets", loaded: 0, total: 0 });
+    await openProject(result.project, result.source, (loaded, total) =>
+      dispatch({ type: "assets", loaded, total }),
+    );
+    dispatch({
+      type: "ready",
+      result: { project: result.project, source: result.source, zipUrl: null, zipBytes: null, expiresAt: null },
+    });
+    navigate("listen");
+  } catch (e) {
+    if (signal.aborted && !isJobError(e)) return;
+    dispatch({ type: "fail", error: isJobError(e) ? e : classifyError(e) });
+  }
 }
 
 export function reset(): void {
@@ -129,12 +202,14 @@ export function cancelJob(): void {
 }
 
 export function retry(): void {
-  if (lastFile) void startJob(lastFile);
+  startPending();
 }
 
 /** Start the file the visitor already chose. Must be called from their click. */
 export function startPending(): void {
-  if (lastFile) void startJob(lastFile);
+  if (!lastFile) return;
+  if (options.value.where === "browser") void startLocalJob(lastFile);
+  else void startJob(lastFile);
 }
 
 export function hasPendingFile(): boolean {

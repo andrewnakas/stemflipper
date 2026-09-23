@@ -8,6 +8,8 @@
  *   quota    the run fails on a ZeroGPU seconds limit and offers a cheaper preset
  *   runs     the run fails on a ZeroGPU *runs* limit and offers a token instead
  *   keep     keep a song in the browser, reload, reopen it and hear it
+ *   local    the whole pipeline in the browser — opt-in: it downloads a 64 MB model and
+ *            takes ~1x realtime with WebGPU but ~31x without, so CI does not run it
  *
  * The upload and quota scenarios need the mock backend running:
  *   node scripts/mock_backend.mjs --port 7861 [--mode quota]
@@ -301,6 +303,17 @@ async function runUpload(page, { expectError } = {}) {
   await page.waitForSelector(".btn--primary", { timeout: 15_000 });
   await page.waitForFunction("window.__sf.job.kind === 'picked'", { timeout: 15_000 });
 
+  // Pick the server explicitly. The default depends on whether this machine has a GPU,
+  // so without this the scenario would quietly run locally on some runners.
+  const where = await page.evaluate(() => {
+    const opts = [...document.querySelectorAll(".where__opt")];
+    const server = opts.find((o) => /On the server/.test(o.textContent));
+    if (server) server.click();
+    return { count: opts.length, chose: !!server };
+  });
+  if (where.count !== 2) problems.push(`expected two places to run, saw ${where.count}`);
+  if (!where.chose) problems.push("no server option to choose");
+
   const picked = await page.evaluate(() => ({ route: window.__sf.route, job: window.__sf.job }));
   note(`picked: route=${picked.route} ${picked.job.file.name} ${picked.job.file.durationS?.toFixed?.(1)}s`);
   if (picked.route !== "run") problems.push(`choosing a file should go to the run screen, got ${picked.route}`);
@@ -507,6 +520,69 @@ function bundleZip(name) {
   return out;
 }
 
+/**
+ * The in-browser pipeline, end to end. Opt-in: it fetches a 64 MB model and runs a real
+ * neural separation, which is fast on a GPU and very slow without one.
+ */
+async function scenarioLocal(page) {
+  await page.goto(`${BASE}/`, { waitUntil: "networkidle0", timeout: 60_000 });
+  await page.waitForFunction("window.__sf && window.__sf.ready === true", { timeout: 30_000 });
+
+  const cap = await page.evaluate(() => ({ gpu: !!navigator.gpu, isolated: self.crossOriginIsolated }));
+  note(`device: webgpu=${cap.gpu} isolated=${cap.isolated}`);
+
+  const input = await page.$('input[type="file"]');
+  await input.uploadFile(flag("clip", SAMPLE));
+  await page.waitForFunction("window.__sf.job.kind === 'picked'", { timeout: 20_000 });
+  await page.evaluate(() => {
+    [...document.querySelectorAll(".where__opt")].find((o) => /In your browser/.test(o.textContent))?.click();
+  });
+
+  const t0 = Date.now();
+  await page.evaluate(() => {
+    [...document.querySelectorAll("button")].find((b) => /Flip it/.test(b.textContent))?.click();
+  });
+  await page.waitForFunction("['ready','error'].includes(window.__sf.job.kind)", { timeout: 600_000, polling: 500 });
+
+  const final = await page.evaluate(() => {
+    const s = window.__sf.state;
+    return {
+      kind: window.__sf.job.kind,
+      error: window.__sf.job.error?.message,
+      route: window.__sf.route,
+      sourceKind: s.source?.kind,
+      device: s.project?.separation?.device,
+      tracks: (s.project?.tracks || []).map((t) => `${t.id}:${(s.notes[t.id] || []).length}n`),
+      stages: (s.project?.stages || []).map((x) => `${x.name}=${x.status}`),
+      phases: window.__sf.jobLog,
+    };
+  });
+  note(`${Math.round((Date.now() - t0) / 1000)}s on ${final.device}: ${final.tracks.join(" ")}`);
+  note(`stages: ${final.stages.join(" ")}`);
+
+  if (final.kind !== "ready") {
+    problems.push(`local run ended as ${final.kind}: ${final.error}`);
+    return;
+  }
+  if (final.route !== "listen") problems.push("a local run should land on Listen");
+  // Nothing may have been uploaded, so the assets must be local blobs.
+  if (final.sourceKind !== "blob") problems.push(`local output should be blobs, got "${final.sourceKind}"`);
+  if (final.tracks.length !== 2) problems.push(`expected vocals + instrumental, got ${final.tracks.join(",")}`);
+  if (!final.stages.includes("samples=skipped")) problems.push("local run should say samples were skipped");
+
+  await page.evaluate(() => window.__sf.waitForInstruments());
+  const mix = await page.evaluate(() => window.__sf.renderMix({ to: 3 }));
+  note(`render rms=${mix.rms.toFixed(4)} peak=${mix.peak.toFixed(3)}`);
+  if (!(mix.rms > 0.001)) problems.push("the locally separated stems render silent");
+
+  const midi = await page.evaluate(async () => {
+    const bytes = await window.__sf.exportMidiBytes();
+    return { len: bytes.length, head: String.fromCharCode(...bytes.slice(0, 4)) };
+  });
+  note(`midi: ${midi.len} bytes, header ${midi.head}`);
+  if (midi.head !== "MThd") problems.push("MIDI from a local run has a bad header");
+}
+
 /** ------------------------------------------------------------------- driver */
 
 const SCENARIOS = {
@@ -516,6 +592,7 @@ const SCENARIOS = {
   quota: scenarioQuota,
   runs: scenarioRuns,
   keep: scenarioKeep,
+  local: scenarioLocal,
 };
 
 try {

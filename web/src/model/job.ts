@@ -112,6 +112,8 @@ export type JobEvent =
   | { type: "ready"; result: JobResult }
   | { type: "fail"; error: JobError }
   | { type: "tick"; now: number }
+  /** Progress from the in-browser pipeline, which reports its own steps. */
+  | { type: "local"; step: Step; pct: number | null; desc: string; now: number }
   | { type: "reset" };
 
 /** The frames the Gradio queue sends. Only the fields we actually read are typed. */
@@ -193,6 +195,27 @@ export function reduce(phase: JobPhase, ev: JobEvent, ctx: { expectedS: number }
       // Give each step a slice of the estimate proportional to its span of the bar.
       const stepBudget = Math.max(2, ctx.expectedS * (end - start));
       return { ...phase, shown: smooth(Math.max(phase.pct, phase.shown), end, elapsed, stepBudget) };
+    }
+
+    case "local": {
+      const file = fileOf(phase) || { name: "", bytes: 0, durationS: null, type: "" };
+      const prev = phase.kind === "running" ? phase : null;
+      const changedStep = !prev || prev.step !== ev.step;
+      const [start, end] = STEP_BOUNDS[ev.step];
+      // The local pipeline reports progress within a step; place it on the same 0..1
+      // scale the server uses so one bar and one stepper serve both.
+      const pct = ev.pct == null ? (prev?.pct ?? start) : start + (end - start) * Math.max(0, Math.min(1, ev.pct));
+      return {
+        kind: "running",
+        file,
+        step: ev.step,
+        desc: ev.desc,
+        pct,
+        shown: Math.max(pct, changedStep ? 0 : (prev?.shown ?? 0)),
+        stepStartedAt: changedStep ? ev.now : prev!.stepStartedAt,
+        startedAt: prev?.startedAt ?? ev.now,
+        expectedS: ctx.expectedS,
+      };
     }
 
     case "gradio":

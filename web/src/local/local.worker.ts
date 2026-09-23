@@ -1,5 +1,5 @@
 /**
- * In-browser source separation.
+ * In-browser separation and transcription.
  *
  * Runs UVR-MDX-NET through onnxruntime-web to pull the vocal out of a mix; the
  * instrumental is the residual, which keeps the two exactly complementary. Ported from
@@ -20,14 +20,41 @@
  * That is 261,120 samples per chunk, just under six seconds at 44.1 kHz.
  */
 
-import * as ort from "onnxruntime-web/webgpu";
+import type * as ORT from "onnxruntime-web";
+import {
+  BP_FRAMES_PER_WINDOW, N_PITCHES, notesFromOutputs, unwrapWindows, windowsFor,
+  type BpOptions, type Matrix,
+} from "./basicPitch";
 import { Spectral } from "./spectral.js";
 
 const MODEL_URL =
   "https://huggingface.co/Politrees/UVR_resources/resolve/main/models/MDXNet/UVR-MDX-NET-Voc_FT.onnx";
+/**
+ * basic-pitch, 230 KB of ONNX. Small enough that transcription in a browser is not the
+ * hard part — the separation model is.
+ */
+const BP_MODEL_URL =
+  "https://cdn.jsdelivr.net/gh/spotify/basic-pitch@main/basic_pitch/saved_models/icassp_2022/nmp.onnx";
+const BP_INPUT = "serving_default_input_2:0";
+/** The model returns [note, onset, contour], in that order. */
+const BP_OUTPUTS = ["StatefulPartitionedCall:2", "StatefulPartitionedCall:1", "StatefulPartitionedCall:0"];
+
 const CACHE_NAME = "stemflipper-models-v1";
 /** Matches the onnxruntime-web version in package.json; the wasm must not drift from it. */
 const ORT_WASM_BASE = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.0/dist/";
+const ORT_SCRIPT = `${ORT_WASM_BASE}ort.webgpu.min.js`;
+
+/**
+ * onnxruntime is pulled in at runtime rather than bundled.
+ *
+ * Importing it as a module makes Vite follow its `new URL(...wasm, import.meta.url)` and
+ * emit a 25 MB wasm into dist — for a file we then never use, because wasmPaths points at
+ * the CDN anyway. importScripts keeps the build small and the runtime identical. Types
+ * come from the package via `import type`, which is erased at build time.
+ */
+declare const ort: typeof ORT;
+declare function importScripts(...urls: string[]): void;
+importScripts(ORT_SCRIPT);
 
 const N_FFT = 6144;
 const HOP = 1024;
@@ -39,7 +66,7 @@ export const LOCAL_SR = 44100;
 /** UVR applies a make-up gain to this model; without it the residual keeps a vocal ghost. */
 const COMPENSATE = 1.021;
 
-let session: ort.InferenceSession | null = null;
+let session: ORT.InferenceSession | null = null;
 let spectral: InstanceType<typeof Spectral> | null = null;
 
 type Out = Record<string, unknown>;
@@ -50,7 +77,7 @@ function status(phase: string, pct: number, detail: string): void {
   post("status", { phase, pct, detail });
 }
 
-async function fetchModel(): Promise<Uint8Array> {
+async function fetchModel(url = MODEL_URL, label = "the model (64 MB, once per device)"): Promise<Uint8Array> {
   let cache: Cache | null = null;
   try {
     cache = await caches.open(CACHE_NAME);
@@ -58,15 +85,15 @@ async function fetchModel(): Promise<Uint8Array> {
     /* private browsing */
   }
   if (cache) {
-    const hit = await cache.match(MODEL_URL);
+    const hit = await cache.match(url);
     if (hit) {
       status("model", 100, "Model already on this device");
       return new Uint8Array(await hit.arrayBuffer());
     }
   }
 
-  status("model", 0, "Downloading the model (64 MB, once per device)…");
-  const res = await fetch(MODEL_URL);
+  status("model", 0, `Downloading ${label}…`);
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`Could not download the model (HTTP ${res.status})`);
   const total = Number(res.headers.get("content-length") || 0);
   const reader = res.body!.getReader();
@@ -91,7 +118,7 @@ async function fetchModel(): Promise<Uint8Array> {
   }
   if (cache) {
     try {
-      await cache.put(MODEL_URL, new Response(bytes));
+      await cache.put(url, new Response(bytes));
     } catch {
       /* storage quota */
     }
@@ -99,7 +126,7 @@ async function fetchModel(): Promise<Uint8Array> {
   return bytes;
 }
 
-async function ensureSession(): Promise<ort.InferenceSession> {
+async function ensureSession(): Promise<ORT.InferenceSession> {
   if (session) return session;
 
   ort.env.wasm.wasmPaths = ORT_WASM_BASE;
@@ -261,11 +288,51 @@ async function separate(left: Float32Array, right: Float32Array) {
   return { vocals: [vocL, vocR], instrumental: [insL, insR] };
 }
 
+/* --------------------------------------------------------------- transcription */
+
+let bpSession: ORT.InferenceSession | null = null;
+
+async function ensureBasicPitch(): Promise<ORT.InferenceSession> {
+  if (bpSession) return bpSession;
+  ort.env.wasm.wasmPaths = ORT_WASM_BASE;
+  ort.env.logLevel = "error";
+  const bytes = await fetchModel(BP_MODEL_URL, "the note model (230 KB)");
+  // CPU only: the model is tiny and the windows are sequential, so a GPU session costs
+  // more to set up than it saves.
+  bpSession = await ort.InferenceSession.create(bytes, { executionProviders: ["wasm"] });
+  return bpSession;
+}
+
+/** mono 22.05 kHz -> notes. */
+async function transcribe(mono: Float32Array, opts: BpOptions, label: string) {
+  const s = await ensureBasicPitch();
+  const windows = windowsFor(mono);
+  const noteWins: Float32Array[] = [];
+  const onsetWins: Float32Array[] = [];
+
+  for (let i = 0; i < windows.length; i++) {
+    status("transcribe", (i / windows.length) * 100, `Finding notes in ${label} — ${i + 1} of ${windows.length}`);
+    const input = new ort.Tensor("float32", windows[i], [1, windows[i].length, 1]);
+    const out = await s.run({ [BP_INPUT]: input });
+    noteWins.push(out[BP_OUTPUTS[0]].data as Float32Array);
+    onsetWins.push(out[BP_OUTPUTS[1]].data as Float32Array);
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  const frames: Matrix = unwrapWindows(noteWins, N_PITCHES, mono.length);
+  const onsets: Matrix = unwrapWindows(onsetWins, N_PITCHES, mono.length);
+  void BP_FRAMES_PER_WINDOW;
+  return notesFromOutputs(frames, onsets, opts);
+}
+
 self.onmessage = async (e: MessageEvent) => {
   const msg = e.data || {};
   try {
     if (msg.type === "warmup") {
       await ensureSession();
+    } else if (msg.type === "transcribe") {
+      const notes = await transcribe(msg.mono, msg.opts || {}, msg.label || "the track");
+      (self as unknown as Worker).postMessage({ type: "notes", id: msg.id, notes });
     } else if (msg.type === "separate") {
       const r = await separate(msg.left, msg.right);
       (self as unknown as Worker).postMessage(

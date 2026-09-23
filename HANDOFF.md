@@ -101,6 +101,48 @@ the (separate, private) audiosaw repo.
   **Lesson: the recovery actions in a JobError are a promise. One that renders nothing is
   worse than not offering it** — the panel looked complete while being a dead end.
 
+- **2026-09-23 (Opus, the free option): the whole pipeline can run in the browser.**
+  The shared ZeroGPU pool is two GPU-minutes a day across every anonymous visitor *and*
+  a runs limit, so for most people the server is simply not available. The honest fix is
+  to do the work on their machine, and audiosaw.com already proved the hard part.
+
+  **What it does:** decode → UVR-MDX-NET separation (vocals + instrumental) → basic-pitch
+  transcription of each → tempo, beat phase and key → a `project.json` with the same
+  `schema_version: 2` contract the Space emits. Listen, Studio, note editing and every
+  export work on it unchanged; only `separation.device` and `grid.source` differ.
+
+  **Measured end to end in a browser:** an 8-second clip took 26 s including the 64 MB
+  model download, on WebGPU. The UI predicted "about 24 seconds".
+
+  **Two stems, not four, and that is a model limit, not a shortcut.** Demucs' ONNX export
+  is 158 MB and onnxruntime-web cannot load it — session creation runs for two minutes
+  then aborts inside the WASM heap. MDX-Net is 64 MB and runs a six-second chunk in under
+  three. Samples, instruments and loops stay server-only; the stage trail says
+  `samples=skipped` rather than pretending otherwise.
+
+  **Speed is the thing to be honest about.** Measured: WebGPU ≈ 1.1 s per second of
+  audio, multi-threaded WASM ≈ 10, single-threaded ≈ 31 — the same 3:30 song is four
+  minutes, half an hour, or nearly two hours. Threads need the page cross-origin
+  isolated, which needs COOP/COEP headers the *host* sends, so the same browser is fast
+  or slow depending on where the page is served from. `local/capability.ts` detects this
+  and the run screen states the estimate before anyone commits.
+
+  **Correctness is checked against the originals, not assumed:**
+  - `local/spectral.js` and `local/tempo.js` are copied from audiosaw with the numerics
+    untouched (STFT round-trip verified here at −168 dB).
+  - `local/basicPitch.ts` reproduces all 264 notes across three cases from Spotify's own
+    `note_creation.py`, amplitudes equal to four decimals. The server's thresholds were
+    tuned against that algorithm, so a merely-plausible note tracker would hand you
+    different MIDI depending on where the job ran.
+
+  **A build trap worth remembering:** importing onnxruntime as a module makes Vite follow
+  its `new URL(...wasm, import.meta.url)` and emit a **25 MB wasm** into `dist` — for a
+  file never used, since `wasmPaths` points at a CDN. The worker uses `importScripts`
+  (`worker: { format: "iife" }`) and the worker chunk is 11.8 kB.
+
+  **Follow-up:** add COOP/COEP to the audiosaw proxy for `/stemflipper` so machines
+  without WebGPU get threads (10x instead of 31x). Needs a second PR on that repo.
+
 ## V3 QUEUE
 
 - [x] **N1 — shell, router, job state machine, screens, mock backend, smoke scenarios.**
