@@ -199,6 +199,41 @@ the (separate, private) audiosaw repo.
   Guarded in the `demo` smoke scenario, which now builds the zip, walks its central
   directory, and fails if `project.json` or the instrument samples are missing from it.
 
+- **2026-09-23 (Opus, asked for): the arrangement timeline, sheet music, and a hand-off
+  to audiosaw's editor.**
+
+  **Timeline.** Studio's three lanes per track were three faders with no picture; the
+  loops and phrases each knew their position in the song and it existed only as a filename.
+  Every track now draws Original / Synth / Sampler as strips in the ruler's coordinates,
+  plus a clips row. Click a strip to mute a lane, a clip to hear it. A loop's length comes
+  from its own bars and tempo, not the song's — not the same number when the tracker has
+  locked to double time.
+
+  **Score.** `model/score.ts` quantises the raw transcription into measures, note values,
+  rests and ties; `export/musicxml.ts` writes it out; VexFlow draws it, lazy-loaded
+  (1.1 MB chunk, only on that view). Notation plus tablature for anything in guitar or
+  bass range. The invariant that catches the off-by-ones is that **every measure must sum
+  to exactly one measure**, rests included. Low bass parts are written 8vb, with
+  `clef-octave-change` so the file still means E1. Two drawing bugs were found by looking:
+  only the first line had a clef, and hand-generated beams ran across bars with rests.
+
+  **Hand-off.** audiosaw.com has a multitrack editor and this page is same-origin, so any
+  selection of stems goes straight onto its timeline. It writes the editor's own
+  `.audiosaw` format — a zip of `project.json` plus one file per source — and delivers it
+  through the handoff flow.js already uses between audiosaw's tools (`pending` in the
+  shared `audiosaw` DB, then `?from=`). **The database version stays 1**: flow.js and the
+  service worker both open it, and a third writer bumping it is the VersionError their own
+  notes warn about. Two things came from reading their reader, not guessing: entries must
+  be **stored, not deflated**, and `project.json` is normalised on import so master, buses
+  and fx can be omitted. Off-origin the button hides and the file is offered as a download,
+  with the reason stated.
+  **Verified on production end to end**: 4 tracks → chip → "use it" → four named tracks
+  with waveforms on the editor's timeline.
+
+  **Not done, and a fair next step:** only the separated stems are sent. The synth and
+  sampler reconstructions are rendered in the browser and could be rendered offline per
+  lane and sent as extra tracks.
+
 ## V3 QUEUE
 
 - [x] **N1 — shell, router, job state machine, screens, mock backend, smoke scenarios.**
