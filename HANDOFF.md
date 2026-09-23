@@ -172,11 +172,13 @@ the (separate, private) audiosaw repo.
   and a **full in-browser run** (27 s, WebGPU, 43 notes, valid MIDI, nothing uploaded)
   both pass against audiosaw.com itself.
 
-  **Everything in PLAN_V3 is done except N2 (Sign in with Hugging Face)**, which needs an
-  OAuth client id only the account owner can create. It matters much less than it did
-  when the plan was written: the browser path needs no account at all, so signing in is
-  now an optimisation for the four-stem version rather than the difference between the
-  site working and not.
+  **Everything in PLAN_V3 is now done.** N2 (Sign in with Hugging Face) was the last
+  open item and was wired later the same day — see the N2 entry below for the app's
+  identifiers and what was verified. It matters much less than it did when the plan was
+  written: the browser path needs no account at all, so signing in is an optimisation for
+  the four-stem version rather than the difference between the site working and not. The
+  one thing still unmeasured is whether an `hf_oauth_` token is actually attributed to
+  the signer's GPU quota — that is the attribution spike, also described under N2.
 
 - **2026-09-23 (Opus, reported by the user): "download the whole project just links as a
   readme".** Three bugs behind one symptom, all in the Downloads panel.
@@ -268,17 +270,25 @@ the (separate, private) audiosaw repo.
       bugs found — a double-decoded gzip body, and `/stemflipper` without a trailing slash
       404ing every relative asset), `_routes.json`, the tool-graph entry and rail, the
       service-worker bypass, and a sitemap `EXTRA` list. **User merges.**
-- [ ] **N2 — sign in with Hugging Face.** Built and unit-tested (PKCE against the RFC 7636
-      vector) but **not wired**: needs an OAuth app registered at
-      https://huggingface.co/settings/applications/new — public (no secret), scopes
-      `openid profile`, redirect URIs `https://audiosaw.com/stemflipper/`,
-      `https://andrewnakas.github.io/stemflipper/`, `http://localhost:4173/stemflipper/`.
-      Then set it as the repository **variable** `VITE_HF_CLIENT_ID` (Settings → Secrets
-      and variables → Actions → Variables) — `pages.yml` already passes it to the build.
-      Public by design: a PKCE client id identifies the app, it does not authorise
-      anything. The sign-in button hides itself while it is empty, so the site works
-      anonymously today.
-      **Then run the spike that is still outstanding:** an 8-minute WAV on `best` requests
+- [x] **N2 — sign in with Hugging Face.** Wired and live on 2026-09-23. The OAuth app is
+      registered on the `nakas` account as **StemFlipper**, app id
+      `6ab443f4af6717ec7b08b3e7`, client id `616385d2-3a89-48a9-a983-b43ac57d4385` —
+      public (HF confirms "Public app — No client secret"), scopes exactly
+      `openid profile`, token expiry 8 h (matching the `expires_in` 28800 the client
+      assumes), redirect URIs `https://audiosaw.com/stemflipper/`,
+      `https://andrewnakas.github.io/stemflipper/`, `http://localhost:4173/stemflipper/`
+      — all three exact, trailing slash included, because `hfAuth.ts::redirectUri()` is
+      `location.origin + location.pathname`. The client id is the repository **variable**
+      `VITE_HF_CLIENT_ID`; `pages.yml` passes it to the build. Public by design: a PKCE
+      client id identifies the app, it does not authorise anything, so it is fine in a
+      variable and in the shipped bundle.
+      Verified on production after the redeploy: the id is present in
+      `/stemflipper/assets/index-4PaedDX-.js` on **both** audiosaw.com and github.io, the
+      sign-in button renders (it hides itself while the id is empty), and clicking it
+      reaches HF's consent screen — `response_type=code`, `scope=openid+profile`,
+      `code_challenge_method=S256`, redirect accepted — asking for "Public profile" only.
+      Nobody has clicked Authorize yet, so no account has been connected.
+      **Still outstanding — the attribution spike:** an 8-minute WAV on `best` requests
       159 s, which exceeds the anonymous 120 s pool but fits a free account's 300 s. Run it
       signed out, then signed in, and read `process_completed.output.error`: `120s left`
       means the token was ignored, `300s left` (or the job simply runs) means it was
