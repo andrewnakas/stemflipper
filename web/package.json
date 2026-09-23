@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --port 4173 --strictPort",
     "test": "vitest run",
-    "smoke": "node scripts/web_smoke.mjs"
+    "smoke": "node scripts/web_smoke.mjs",
+    "mock": "node scripts/mock_backend.mjs"
   },
   "dependencies": {
     "@preact/signals": "^2.0.0",

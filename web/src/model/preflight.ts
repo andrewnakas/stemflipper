@@ -72,8 +72,10 @@ export function probeDuration(file: File, timeoutMs = 10_000): Promise<number | 
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      audio.removeAttribute("src");
-      audio.load();
+      audio.onloadedmetadata = null;
+      audio.onerror = null;
+      // Do NOT call load() after revoking: that re-fetches the dead blob: URL and the
+      // browser records a failed request for it. Dropping the element is enough.
       URL.revokeObjectURL(url);
       resolve(value);
     };
@@ -92,13 +94,25 @@ export interface Preflight {
   problem: JobError | null;
 }
 
+/** One entry per File, so picking then running does not probe the same file twice. */
+const probed = new WeakMap<File, Preflight>();
+
 export async function preflight(file: File): Promise<Preflight> {
+  const cached = probed.get(file);
+  if (cached) return cached;
+
   const quick = validateMeta(fileMeta(file));
   // Do not spend time decoding something already rejected on size or type.
-  if (quick && quick.code !== "too_long") return { meta: fileMeta(file), problem: quick };
+  if (quick && quick.code !== "too_long") {
+    const rejected = { meta: fileMeta(file), problem: quick };
+    probed.set(file, rejected);
+    return rejected;
+  }
   const durationS = await probeDuration(file);
   const meta = fileMeta(file, durationS);
-  return { meta, problem: validateMeta(meta) };
+  const result = { meta, problem: validateMeta(meta) };
+  probed.set(file, result);
+  return result;
 }
 
 export function formatBytes(n: number): string {
