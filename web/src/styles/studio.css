@@ -62,3 +62,7 @@
   background: var(--warn-soft); color: var(--warn); font-size: var(--t-xs);
 }
 @media (max-width: 900px) { .studio-narrow { display: block; } }
+
+/* The lane strips: the arrangement, above the editable roll. */
+.lanes { border-bottom: 1px solid var(--line); }
+.lanes canvas { width: 100%; }

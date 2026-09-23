@@ -13,6 +13,8 @@ import {
 import type { LaneId, Track } from "../../model/types";
 import { levels } from "../../model/playback";
 import { PianoRoll } from "../PianoRoll";
+import { ClipStrip, clipsOf } from "./ClipStrip";
+import { LaneStrip } from "./LaneStrip";
 import { Ruler } from "../Ruler";
 import { navigate } from "../router";
 import { setStudioScheme } from "../theme";
@@ -195,6 +197,37 @@ function TrackRow({ track, level }: { track: Track; level: number }) {
         </div>
       </div>
       <div class="tracklanes">
+        {/* The arrangement: every lane and every clip on the one timeline. */}
+        <div class="lanes">
+          {LANES.map((lane) => (
+            <LaneStrip
+              key={lane.id}
+              track={track}
+              lane={lane.id}
+              label={lane.label}
+              notes={lane.id === "original" ? [] : notes}
+              duration={project.value!.song.duration}
+              pxPerSecond={pxPerSecond.value}
+              scrollX={scrollX.value}
+              playhead={playhead.value}
+              gain={m.lanes[track.id]?.[lane.id] ?? 0}
+              onToggle={() =>
+                set((s) => {
+                  const cur = s.lanes[track.id][lane.id];
+                  s.lanes[track.id][lane.id] = cur > 0.01 ? 0 : 1;
+                })
+              }
+            />
+          ))}
+          {clipsOf(track, project.value!.grid).length ? (
+            <ClipStrip
+              track={track}
+              grid={project.value!.grid}
+              pxPerSecond={pxPerSecond.value}
+              scrollX={scrollX.value}
+            />
+          ) : null}
+        </div>
         {hasNotes || track.kind !== "drums" ? (
           <PianoRoll
             track={track}
