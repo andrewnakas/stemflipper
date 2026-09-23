@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildAudiosawProject } from "../src/export/audiosawProject";
 import type { AssetSource } from "../src/api/assets";
 import type { Project, Track } from "../src/model/types";
+import type { LaneRef } from "../src/export/renderLane";
 
 /**
  * audiosaw's editor reads project files with a small inline unzip that walks local file
@@ -25,6 +26,11 @@ function readZipLikeAudiosaw(ab: ArrayBuffer): Record<string, Uint8Array> {
     o = start + size;
   }
   return out;
+}
+
+/** The separated stem of a track, which is what most exports are. */
+function orig(t: Track): LaneRef {
+  return { track: t, lane: "original" };
 }
 
 function track(id: string, name: string, src: string | null, silent = false): Track {
@@ -66,7 +72,7 @@ describe("AudioSaw project export", () => {
   it("writes a zip the editor's own reader accepts", async () => {
     stubAudio();
     const tracks = [track("vocals", "Vocals", "stems/vocals.flac"), track("drums", "Drums", "stems/drums.flac")];
-    const blob = await buildAudiosawProject(project, source, tracks);
+    const blob = await buildAudiosawProject(project, source, tracks.map(orig));
     const entries = readZipLikeAudiosaw(await blob.arrayBuffer());
     expect(Object.keys(entries)).toContain("project.json");
     expect(Object.keys(entries).filter((k) => k.startsWith("sources/"))).toHaveLength(2);
@@ -75,7 +81,7 @@ describe("AudioSaw project export", () => {
   it("puts every stem on its own track, starting together", async () => {
     stubAudio();
     const tracks = [track("vocals", "Vocals", "stems/vocals.flac"), track("bass", "Bass", "stems/bass.wav")];
-    const blob = await buildAudiosawProject(project, source, tracks);
+    const blob = await buildAudiosawProject(project, source, tracks.map(orig));
     const entries = readZipLikeAudiosaw(await blob.arrayBuffer());
     const p = JSON.parse(new TextDecoder().decode(entries["project.json"]));
 
@@ -95,7 +101,7 @@ describe("AudioSaw project export", () => {
   it("keeps every clip pointing at a source that is really in the file", async () => {
     stubAudio();
     const tracks = [track("a", "A", "stems/a.flac"), track("b", "B", "stems/b.flac")];
-    const blob = await buildAudiosawProject(project, source, tracks);
+    const blob = await buildAudiosawProject(project, source, tracks.map(orig));
     const entries = readZipLikeAudiosaw(await blob.arrayBuffer());
     const p = JSON.parse(new TextDecoder().decode(entries["project.json"]));
     for (const t of p.tracks) {
@@ -107,7 +113,7 @@ describe("AudioSaw project export", () => {
 
   it("keeps the real extension, so the editor decodes what it actually got", async () => {
     stubAudio();
-    const blob = await buildAudiosawProject(project, source, [track("a", "A", "stems/a.flac")]);
+    const blob = await buildAudiosawProject(project, source, [orig(track("a", "A", "stems/a.flac"))]);
     const entries = readZipLikeAudiosaw(await blob.arrayBuffer());
     const p = JSON.parse(new TextDecoder().decode(entries["project.json"]));
     const src = Object.values(p.sources)[0] as { path: string; name: string };
@@ -118,19 +124,19 @@ describe("AudioSaw project export", () => {
   it("skips silent stems and refuses a selection with nothing in it", async () => {
     stubAudio();
     const blob = await buildAudiosawProject(project, source, [
-      track("a", "A", "stems/a.flac"),
-      track("q", "Quiet", "stems/q.flac", true),
+      orig(track("a", "A", "stems/a.flac")),
+      orig(track("q", "Quiet", "stems/q.flac", true)),
     ]);
     const p = JSON.parse(new TextDecoder().decode(readZipLikeAudiosaw(await blob.arrayBuffer())["project.json"]));
     expect(p.tracks).toHaveLength(1);
 
-    await expect(buildAudiosawProject(project, source, [track("q", "Quiet", null)])).rejects.toThrow(/has any audio/i);
+    await expect(buildAudiosawProject(project, source, [orig(track("q", "Quiet", null))])).rejects.toThrow(/has any audio/i);
   });
 
   it("reports progress so a slow export can show it", async () => {
     stubAudio();
     const seen: string[] = [];
-    await buildAudiosawProject(project, source, [track("a", "A", "stems/a.flac")], {
+    await buildAudiosawProject(project, source, [orig(track("a", "A", "stems/a.flac"))], {
       onProgress: (p) => seen.push(p.name),
     });
     expect(seen.length).toBeGreaterThan(1);

@@ -230,9 +230,17 @@ the (separate, private) audiosaw repo.
   **Verified on production end to end**: 4 tracks → chip → "use it" → four named tracks
   with waveforms on the editor's timeline.
 
-  **Not done, and a fair next step:** only the separated stems are sent. The synth and
-  sampler reconstructions are rendered in the browser and could be rendered offline per
-  lane and sent as extra tracks.
+  **Now sends any lane, not just the stems.** The synth and sampler reconstructions have
+  no file behind them — they exist only as a graph in the tab — so choosing one renders it
+  offline through the same path as the mix export, with a mixer state that silences
+  everything but that one lane. Stems stay the default because they need no rendering;
+  anything that does has to be asked for, and the estimated size is shown first (a 30 s
+  lane roughly doubles the project, and a four-minute one is over 40 MB).
+  Three things found by testing it: a checkbox click and the export click in the same tick
+  export the OLD selection, because the button's closure has not re-rendered; the download
+  button showed no progress during a 24 s render, which reads as broken; and
+  `browser.close()` can hang forever on a page holding an AudioContext, which turned a
+  passing scenario into a timed-out CI job — teardown is bounded now.
 
 ## V3 QUEUE
 

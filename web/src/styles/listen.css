@@ -49,3 +49,11 @@
   .stemrow__fader { width: 100%; }
   .transport { position: static; }
 }
+
+/* Track x lane grid for the editor hand-off. */
+.lanegrid { border-collapse: collapse; font-size: var(--t-sm); }
+.lanegrid th, .lanegrid td { padding: 3px 10px; text-align: center; }
+.lanegrid thead th { font-size: var(--t-xs); color: var(--text-dim); font-weight: 600; }
+.lanegrid tbody th { text-align: left; font-weight: 500; white-space: nowrap; }
+.lanegrid tbody th .swatch { display: inline-block; vertical-align: middle; margin-right: 4px; }
+.lanegrid tbody tr + tr th, .lanegrid tbody tr + tr td { border-top: 1px solid var(--line-soft); }

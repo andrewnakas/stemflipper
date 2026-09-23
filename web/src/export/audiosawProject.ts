@@ -16,7 +16,9 @@
 
 import { zip, type AsyncZippable } from "fflate";
 import { assetUrl, fetchBytes, type AssetSource } from "../api/assets";
-import type { Project, Track } from "../model/types";
+import { encodeWav } from "./wav";
+import { LANE_LABELS, renderLane, type LaneRef } from "./renderLane";
+import type { Note, Project } from "../model/types";
 
 /** The handoff store flow.js and the service worker share. Version 1, and it must stay 1. */
 const HANDOFF_DB = "audiosaw";
@@ -41,30 +43,50 @@ function sourceId(i: number): string {
 export async function buildAudiosawProject(
   project: Project,
   source: AssetSource,
-  tracks: Track[],
-  opts: { title?: string; onProgress?: (p: AudiosawExportProgress) => void } = {},
+  items: LaneRef[],
+  opts: {
+    title?: string;
+    /** Required to render the synth and sampler lanes, which have no file behind them. */
+    notesByTrack?: Record<string, Note[]>;
+    onProgress?: (p: AudiosawExportProgress) => void;
+  } = {},
 ): Promise<Blob> {
   const files: AsyncZippable = {};
   const sources: Record<string, unknown> = {};
   const outTracks: unknown[] = [];
 
   let i = 0;
-  for (const track of tracks) {
-    const rel = track.audio?.src;
-    if (!rel || track.audio.silent) continue;
-    opts.onProgress?.({ done: i, total: tracks.length, name: track.name });
+  for (const { track, lane } of items) {
+    const label = lane === "original" ? track.name : `${track.name} (${LANE_LABELS[lane].toLowerCase()})`;
+    opts.onProgress?.({ done: i, total: items.length, name: label });
 
-    const bytes = await fetchBytes(assetUrl(source, rel));
+    let bytes: Uint8Array;
+    let ext: string;
+    let duration = project.song.duration;
+
+    if (lane === "original") {
+      const rel = track.audio?.src;
+      if (!rel || track.audio.silent) continue;
+      bytes = new Uint8Array(await fetchBytes(assetUrl(source, rel)));
+      ext = extOf(rel);
+    } else {
+      // No file exists for a reconstruction — render it, in the same graph that plays it.
+      const buffer = await renderLane(project, source, opts.notesByTrack || {}, track.id, lane);
+      bytes = new Uint8Array(await encodeWav(buffer, 16).arrayBuffer());
+      ext = "wav";
+      // The render carries a tail so a reverb or a release is not cut off mid-decay.
+      duration = buffer.duration;
+    }
+
     const id = sourceId(i);
-    const ext = extOf(rel);
     const path = `sources/${id}.${ext}`;
     // level 0: the editor's reader refuses anything but stored entries.
-    files[path] = [new Uint8Array(bytes), { level: 0 }];
+    files[path] = [bytes, { level: 0 }];
 
     sources[id] = {
       id,
-      name: `${track.name}.${ext}`,
-      duration: project.song.duration,
+      name: `${label}.${ext}`,
+      duration,
       channels: project.song.channels || 2,
       sampleRate: project.song.sample_rate || 44100,
       kind: "file",
@@ -73,7 +95,7 @@ export async function buildAudiosawProject(
 
     outTracks.push({
       id: `sft${i + 1}`,
-      name: track.name,
+      name: label,
       volDb: 0,
       pan: 0,
       mute: false,
@@ -82,12 +104,12 @@ export async function buildAudiosawProject(
         {
           id: `sfc${i + 1}`,
           sourceId: id,
-          name: track.name,
-          // Stems are the same length as the song and start together; that is the whole
-          // point of a separation, and it is what makes them line up on the timeline.
+          name: label,
+          // Everything here starts together and runs the length of the song; that is the
+          // whole point of a separation, and it is what makes it line up on a timeline.
           start: 0,
           offset: 0,
-          duration: project.song.duration,
+          duration,
           gainDb: 0,
           fadeIn: 0,
           fadeOut: 0,
@@ -113,7 +135,7 @@ export async function buildAudiosawProject(
     new TextEncoder().encode(JSON.stringify(projectJson, null, 1)),
     { level: 0 },
   ];
-  opts.onProgress?.({ done: tracks.length, total: tracks.length, name: "project" });
+  opts.onProgress?.({ done: items.length, total: items.length, name: "project" });
 
   return new Promise((resolve, reject) => {
     zip(files, { level: 0 }, (err, data) => {

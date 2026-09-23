@@ -8,6 +8,8 @@
  *   quota    the run fails on a ZeroGPU seconds limit and offers a cheaper preset
  *   runs     the run fails on a ZeroGPU *runs* limit and offers a token instead
  *   keep     keep a song in the browser, reload, reopen it and hear it
+ *   editor   pick tracks and lanes, render what needs rendering, and check the project
+ *            file against the rules audiosaw's editor enforces
  *   local    the whole pipeline in the browser — opt-in: it downloads a 64 MB model and
  *            takes ~1x realtime with WebGPU but ~31x without, so CI does not run it
  *
@@ -309,17 +311,6 @@ async function scenarioDemo(page) {
   note(`play: clock ${played.t.toFixed(2)}s, ctx ${played.state}`);
   if (played.state === "running" && !(played.t > 0)) problems.push("pressing play did not advance the clock");
 
-  // The editor hand-off: build the project file and check it against the rules
-  // audiosaw's own reader enforces — stored entries, project.json, and every clip
-  // pointing at a source that is really in the file.
-  const proj = await page.evaluate(() => {
-    const c = [...document.querySelectorAll(".card")].find((x) => /Edit on a timeline/.test(x.textContent));
-    return { present: !!c, tracks: c ? c.querySelectorAll("input[type=checkbox]").length : 0 };
-  });
-  note(`send to editor: ${proj.tracks} tracks selectable`);
-  if (!proj.present) problems.push("no way to send the tracks to a timeline editor");
-  if (proj.tracks < 2) problems.push(`expected several selectable tracks, saw ${proj.tracks}`);
-
   // Sheet music: the notation has to actually draw, for a pitched part and for drums.
   await page.evaluate(() => {
     [...document.querySelectorAll("button")].find((b) => /sheet music/i.test(b.textContent))?.click();
@@ -603,6 +594,104 @@ function bundleZip(name) {
 }
 
 /**
+ * Sending tracks to audiosaw's multitrack editor.
+ *
+ * The separated stems are files already; the synth and sampler lanes are not, and have to
+ * be rendered before they can be sent. This checks both, and checks the result against the
+ * rules the editor's own reader enforces.
+ */
+async function scenarioEditor(page) {
+  await page.goto(`${BASE}/?fixture=${FIXTURE}`, { waitUntil: "networkidle0", timeout: 60_000 });
+  await page.waitForSelector(".lanegrid", { timeout: 60_000 });
+
+  const grid = await page.evaluate(() => {
+    const t = document.querySelector(".lanegrid");
+    return {
+      headers: [...t.querySelectorAll("thead th")].map((h) => h.textContent.trim()).filter(Boolean),
+      rows: [...t.querySelectorAll("tbody tr")].map((r) => ({
+        name: r.querySelector("th").textContent.trim(),
+        cells: [...r.querySelectorAll("td")].map((c) => {
+          const i = c.querySelector("input");
+          return i ? (i.checked ? "on" : "off") : "-";
+        }),
+      })),
+      estimate: [...document.querySelectorAll("p.xs")]
+        .map((p) => p.textContent.replace(/\s+/g, " ").trim())
+        .find((t) => /tracks, roughly/.test(t)),
+    };
+  });
+  note(`lanes: ${grid.headers.join("/")} — ${grid.rows.map((r) => `${r.name}[${r.cells.join("")}]`).join(" ")}`);
+  note(`  ${grid.estimate}`);
+  if (grid.headers.join(",") !== "Original,Synth,Sampler") problems.push(`unexpected lane columns: ${grid.headers}`);
+  // Stems are the default; a lane that has to be rendered must be asked for.
+  if (!grid.rows.every((r) => r.cells[0] === "on")) problems.push("stems are not selected by default");
+  if (grid.rows.some((r) => r.cells[1] === "on" || r.cells[2] === "on")) {
+    problems.push("a lane that needs rendering is selected by default");
+  }
+
+  await page.evaluate(() => {
+    const row = [...document.querySelectorAll(".lanegrid tbody tr")].find((r) => r.querySelectorAll("td input")[1]);
+    row.querySelectorAll("td input")[1].click();
+  });
+  // The click sets state; the button's own closure only sees the new selection after the
+  // re-render. Clicking download in the same tick silently exports the OLD selection.
+  await page.waitForFunction(
+    () => [...document.querySelectorAll("p.xs")].some((p) => /rendered first/.test(p.textContent)),
+    { timeout: 5_000 },
+  ).catch(() => problems.push("choosing a rendered lane does not say it has to be rendered"));
+
+  // Build it for real, intercepting the blob instead of saving a file.
+  const zipInfo = await page.evaluate(async () => {
+    let captured = null;
+    const realCreate = URL.createObjectURL;
+    URL.createObjectURL = (b) => { captured = b; return realCreate.call(URL, b); };
+    [...document.querySelectorAll("button")].find((b) => /Download the project/.test(b.textContent)).click();
+    const deadline = Date.now() + 120_000;
+    while (!captured && Date.now() < deadline) await new Promise((r) => setTimeout(r, 200));
+    URL.createObjectURL = realCreate;
+    if (!captured) return { error: "the project was never built" };
+
+    const ab = await captured.arrayBuffer();
+    const v = new DataView(ab);
+    const dec = new TextDecoder();
+    const sizes = {};
+    let json = null;
+    let o = 0;
+    while (o + 30 <= ab.byteLength && v.getUint32(o, true) === 0x04034b50) {
+      const method = v.getUint16(o + 8, true);
+      const size = v.getUint32(o + 18, true);
+      const nl = v.getUint16(o + 26, true), xl = v.getUint16(o + 28, true);
+      const name = dec.decode(new Uint8Array(ab, o + 30, nl));
+      const start = o + 30 + nl + xl;
+      if (method !== 0) return { error: `entry ${name} is compressed; the editor refuses those` };
+      sizes[name] = size;
+      if (name === "project.json") json = JSON.parse(dec.decode(new Uint8Array(ab, start, size)));
+      o = start + size;
+    }
+    return { bytes: ab.byteLength, names: Object.keys(sizes), project: json };
+  });
+
+  if (zipInfo.error) {
+    problems.push(zipInfo.error);
+    return;
+  }
+  const p = zipInfo.project;
+  note(`project: ${(zipInfo.bytes / 1e6).toFixed(1)} MB, ${p.tracks.length} tracks — ${p.tracks.map((t) => t.name).join(", ")}`);
+  if (!zipInfo.names.includes("project.json")) problems.push("no project.json in the project file");
+  if (!zipInfo.names.some((n) => /^sources\/.*\.wav$/.test(n))) {
+    problems.push("no rendered WAV — the synth lane was not rendered");
+  }
+  if (!p.tracks.some((t) => /\(synth\)/.test(t.name))) problems.push("the synth lane is not named as one");
+  for (const t of p.tracks) {
+    if (t.clips.length !== 1) problems.push(`${t.name} should have exactly one clip`);
+    if (t.clips[0].start !== 0) problems.push(`${t.name} does not start at zero`);
+    const src = p.sources[t.clips[0].sourceId];
+    if (!src) problems.push(`${t.name} points at a source that is not in the file`);
+    else if (!zipInfo.names.includes(src.path)) problems.push(`${src.path} is referenced but missing`);
+  }
+}
+
+/**
  * The in-browser pipeline, end to end. Opt-in: it fetches a 64 MB model and runs a real
  * neural separation, which is fast on a GPU and very slow without one.
  */
@@ -674,6 +763,7 @@ const SCENARIOS = {
   quota: scenarioQuota,
   runs: scenarioRuns,
   keep: scenarioKeep,
+  editor: scenarioEditor,
   local: scenarioLocal,
 };
 
@@ -688,7 +778,16 @@ try {
 } catch (err) {
   problems.push(`fatal: ${err.message}`);
 } finally {
-  await browser?.close();
+  // Bounded teardown: a page holding an AudioContext or a worker can leave close()
+  // hanging indefinitely, which turns a passing scenario into a timed-out CI job.
+  if (browser) {
+    await Promise.race([browser.close().catch(() => undefined), new Promise((r) => setTimeout(r, 10_000))]);
+    try {
+      browser.process()?.kill("SIGKILL");
+    } catch {
+      /* already gone */
+    }
+  }
 }
 
 if (problems.length) {
