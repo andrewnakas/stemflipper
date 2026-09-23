@@ -37,7 +37,7 @@ export async function downloadMix(): Promise<void> {
   }
 }
 
-export async function downloadBundle(opts: { stems?: boolean } = {}): Promise<void> {
+export async function downloadBundle(opts: { midi?: boolean; mix?: boolean; stems?: boolean } = {}): Promise<void> {
   const p = project.value;
   const src = assetSource.value;
   const m = mixer.value;
@@ -45,8 +45,8 @@ export async function downloadBundle(opts: { stems?: boolean } = {}): Promise<vo
   busy.value = true;
   try {
     const blob = await buildExportZip(p, src, m, notesByTrack.value, {
-      midi: true,
-      mix: true,
+      midi: opts.midi ?? true,
+      mix: opts.mix ?? true,
       stems: Boolean(opts.stems),
       onProgress: (text) => (status.value = { text }),
     });

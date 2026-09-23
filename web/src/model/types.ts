@@ -85,6 +85,12 @@ export interface Track {
   midi: string | null;
 }
 
+export interface Section {
+  start: number;
+  end: number;
+  label: string;
+}
+
 export interface Stage {
   name: string;
   status: StageStatus;
@@ -99,7 +105,7 @@ export interface Project {
   grid: Grid;
   key: { name: string; tonic: number | null; mode: string | null; confidence: number };
   chords: { start: number; end: number; label: string; root: number | null; quality: string | null; conf: number }[];
-  sections: { start: number; end: number; label: string }[];
+  sections: Section[];
   separation: { preset: string; device: string; gpu_seconds: number; residual_db?: number; chain: { step: string; model: string; input: string; seconds: number }[] };
   tracks: Track[];
   midi: { song: string | null; chords: string | null };

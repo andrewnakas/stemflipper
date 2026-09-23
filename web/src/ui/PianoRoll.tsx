@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "preact/hooks";
 import { barLines } from "../model/grid";
+import { rollPalette } from "./theme";
 import type { Grid, Note, Track } from "../model/types";
 
 export type EditTool = "select" | "draw" | "erase";
@@ -37,6 +38,7 @@ export interface RollProps {
 }
 
 const PAD_L = 44;
+const DRUM_LABEL_FONT = '9px -apple-system, system-ui, sans-serif';
 const EDGE_PX = 5;
 
 export function PianoRoll(props: RollProps) {
@@ -169,7 +171,8 @@ function draw(canvas: HTMLCanvasElement, p: RollProps): void {
   const visibleFrom = tOf(padL);
   const visibleTo = tOf(cssWidth);
 
-  ctx.fillStyle = "#12151c";
+  const c = rollPalette();
+  ctx.fillStyle = c.bg;
   ctx.fillRect(padL, 0, plotW, cssHeight);
 
   const isDrum = p.track.kind === "drums";
@@ -196,30 +199,39 @@ function draw(canvas: HTMLCanvasElement, p: RollProps): void {
   if (isDrum) {
     for (const pitch of rows) {
       const y = yOf(pitch);
-      ctx.strokeStyle = "#1c212b";
+      ctx.strokeStyle = c.row;
       ctx.beginPath();
       ctx.moveTo(padL, y);
       ctx.lineTo(cssWidth, y);
       ctx.stroke();
-      ctx.fillStyle = "#8794a8";
+      ctx.fillStyle = c.label;
+      // Kit-piece names are longer than the pitch labels a melodic roll shows, so they get
+      // a smaller face and a hard clip: at the default size "HH open" and "Tom mid" ran
+      // over the divider and sat on top of the notes.
+      ctx.save();
+      ctx.font = DRUM_LABEL_FONT;
+      ctx.beginPath();
+      ctx.rect(0, 0, padL - 3, cssHeight);
+      ctx.clip();
       ctx.fillText(GM_NAMES[pitch] || String(pitch), 4, y);
+      ctx.restore();
     }
   } else {
     for (let pitch = Math.ceil(lo / 12) * 12; pitch <= hi; pitch += 12) {
       const y = yOf(pitch);
-      ctx.strokeStyle = "#1c212b";
+      ctx.strokeStyle = c.row;
       ctx.beginPath();
       ctx.moveTo(padL, y);
       ctx.lineTo(cssWidth, y);
       ctx.stroke();
-      ctx.fillStyle = "#8794a8";
+      ctx.fillStyle = c.label;
       ctx.fillText(`C${Math.floor(pitch / 12) - 1}`, 4, y);
     }
   }
 
   // bar lines
   const bars = barLines(p.grid, p.duration);
-  ctx.strokeStyle = "#2c3444";
+  ctx.strokeStyle = c.grid;
   for (const t of bars) {
     if (t < visibleFrom - 1 || t > visibleTo + 1) continue;
     const x = xOf(t);
@@ -238,11 +250,14 @@ function draw(canvas: HTMLCanvasElement, p: RollProps): void {
     const y = yOf(n.pitch) - noteH / 2;
     const sounding = p.playhead >= n.start && p.playhead < n.end;
     const selected = p.selection?.has(n.id);
-    const hue = 180 + (n.vel / 127) * 60;
-    ctx.fillStyle = sounding ? "#ffffff" : `hsl(${hue} 70% ${45 + (n.conf || 0.7) * 18}%)`;
+    // Notes take their own track's colour, so a roll matches the stem it came from on the
+    // Listen screen. Velocity drives opacity; a quiet note should look quiet.
+    ctx.globalAlpha = sounding ? 1 : 0.45 + (n.vel / 127) * 0.5;
+    ctx.fillStyle = sounding ? c.noteSel : p.track.color || c.note;
     ctx.fillRect(x, y, w, noteH);
+    ctx.globalAlpha = 1;
     if (selected) {
-      ctx.strokeStyle = "#ffb454";
+      ctx.strokeStyle = c.accent;
       ctx.lineWidth = 1.5;
       ctx.strokeRect(x - 0.5, y - 1, w + 1, noteH + 2);
       ctx.lineWidth = 1;
@@ -254,9 +269,9 @@ function draw(canvas: HTMLCanvasElement, p: RollProps): void {
     const x1 = xOf(Math.max(p.marquee.t0, p.marquee.t1));
     const y0 = yOf(Math.max(p.marquee.p0, p.marquee.p1));
     const y1 = yOf(Math.min(p.marquee.p0, p.marquee.p1));
-    ctx.fillStyle = "rgba(255,180,84,0.12)";
+    ctx.fillStyle = c.rulerLoop;
     ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
-    ctx.strokeStyle = "rgba(255,180,84,0.6)";
+    ctx.strokeStyle = c.accent;
     ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
   }
 
@@ -264,7 +279,7 @@ function draw(canvas: HTMLCanvasElement, p: RollProps): void {
   if (p.playhead > 0 || true) {
     const x = xOf(p.playhead);
     if (x >= padL && x <= cssWidth) {
-      ctx.strokeStyle = "#ffb454";
+      ctx.strokeStyle = c.playhead;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.moveTo(x, 0);
@@ -274,7 +289,7 @@ function draw(canvas: HTMLCanvasElement, p: RollProps): void {
     }
   }
 
-  ctx.strokeStyle = "#262c38";
+  ctx.strokeStyle = c.line;
   ctx.beginPath();
   ctx.moveTo(padL, 0);
   ctx.lineTo(padL, cssHeight);

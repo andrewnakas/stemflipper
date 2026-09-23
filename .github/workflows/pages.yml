@@ -31,6 +31,12 @@ jobs:
       - run: npm test
       - run: node scripts/make_ci_fixture.mjs
       - run: npm run build
+        env:
+          # Public by design: a PKCE client id identifies the app, it does not authorise
+          # anything. Set it once as a repository variable and Sign in with Hugging Face
+          # turns itself on; while it is empty the button hides and the site stays
+          # anonymous. Settings -> Secrets and variables -> Actions -> Variables.
+          VITE_HF_CLIENT_ID: ${{ vars.VITE_HF_CLIENT_ID }}
       - name: Headless smoke test
         # Five scenarios: the deep bundle checks, the front door, a whole run against a
         # mock Space that replays SSE frames recorded from the real one (including the

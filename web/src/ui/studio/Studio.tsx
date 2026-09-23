@@ -19,6 +19,7 @@ import { setStudioScheme } from "../theme";
 import { endGesture, marquee, moveGesture, startGesture } from "./gestures";
 import { installKeymap } from "./keymap";
 import { LaneExplainer } from "./LaneExplainer";
+import { ExportDialog } from "./ExportDialog";
 import { ShortcutSheet } from "./ShortcutSheet";
 import { StudioBar } from "./StudioBar";
 
@@ -32,6 +33,7 @@ const LANES: { id: LaneId; label: string; hint: string }[] = [
 
 export function Studio() {
   const [help, setHelp] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     setStudioScheme(true);
@@ -64,7 +66,7 @@ export function Studio() {
 
   return (
     <div class="studio" style={{ display: "contents" }}>
-      <StudioBar onHelp={() => setHelp(true)} />
+      <StudioBar onHelp={() => setHelp(true)} onExport={() => setExporting(true)} />
       <LaneExplainer />
       <div class="studio-narrow">Studio works best on a larger screen — the piano roll needs room.</div>
       <div
@@ -81,6 +83,7 @@ export function Studio() {
               scrollX={scrollX.value}
               playhead={playhead.value}
               loop={loopRegion.value}
+              sections={p.sections}
               onSeek={seek}
               onLoop={setLoop}
             />
@@ -94,6 +97,7 @@ export function Studio() {
         <StageTrail />
       </div>
       {help ? <ShortcutSheet onClose={() => setHelp(false)} /> : null}
+      {exporting ? <ExportDialog onClose={() => setExporting(false)} /> : null}
     </div>
   );
 }

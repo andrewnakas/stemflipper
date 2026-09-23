@@ -8,7 +8,7 @@ import {
 } from "../../model/store";
 import { Button } from "../components/primitives";
 import { navigate } from "../router";
-import { downloadBundle, downloadMix } from "../exports";
+import { downloadMix } from "../exports";
 
 const TOOLS = [
   { id: "select", glyph: "⌖", label: "Select (V)" },
@@ -16,7 +16,7 @@ const TOOLS = [
   { id: "erase", glyph: "⌫", label: "Erase (E)" },
 ] as const;
 
-export function StudioBar({ onHelp }: { onHelp: () => void }) {
+export function StudioBar({ onHelp, onExport }: { onHelp: () => void; onExport: () => void }) {
   const p = project.value;
   if (!p) return null;
 
@@ -69,8 +69,8 @@ export function StudioBar({ onHelp }: { onHelp: () => void }) {
 
       <span class="spacer" />
       <Button size="sm" onClick={() => void downloadMix()} disabled={busy.value}>⬇ Mix</Button>
-      <Button size="sm" onClick={() => void downloadBundle()} disabled={busy.value} title="Edited MIDI + rendered mix + project.json">
-        ⬇ Export
+      <Button size="sm" onClick={onExport} disabled={busy.value} title="Choose what to export">
+        ⬇ Export…
       </Button>
       <Button size="sm" variant="ghost" onClick={onHelp} title="Keyboard shortcuts (?)">?</Button>
     </div>

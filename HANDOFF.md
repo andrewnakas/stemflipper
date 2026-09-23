@@ -87,7 +87,17 @@ the (separate, private) audiosaw repo.
 
 - [x] **N1 — shell, router, job state machine, screens, mock backend, smoke scenarios.**
 - [x] **N3 — the real demo fixture.**
-- [x] **N5 — responsive pass, Studio re-skin, first-run shortcut sheet.**
+- [x] **N5 — responsive pass, Studio re-skin, first-run shortcut sheet, canvas theming.**
+      The piano roll and ruler read their colours from CSS variables through a palette
+      cached per theme change (they redraw every animation frame to move the playhead, so
+      `getComputedStyle` per frame was not an option). Notes take their own track's
+      colour, so a roll matches the stem it came from on the Listen screen, with velocity
+      driving opacity. The ruler grew a section strip — the analysis has been finding song
+      structure all along and nothing showed it. Kit-piece labels are clipped to the
+      gutter at a smaller size; at the melodic roll's font, "HH open" and "Tom mid" sat on
+      top of the notes. Export is a dialog now, which is what finally exposes
+      `buildExportZip`'s per-track rendering — the thing a person most often wants out of
+      an editor was unreachable.
 - [x] **N6a — the audiosaw mount.** PR open: andrewnakas/audiosaw#1. Adds
       `functions/stemflipper/[[path]].js` (verified under `wrangler pages dev`: two real
       bugs found — a double-decoded gzip body, and `/stemflipper` without a trailing slash
@@ -98,9 +108,11 @@ the (separate, private) audiosaw repo.
       https://huggingface.co/settings/applications/new — public (no secret), scopes
       `openid profile`, redirect URIs `https://audiosaw.com/stemflipper/`,
       `https://andrewnakas.github.io/stemflipper/`, `http://localhost:4173/stemflipper/`.
-      Set the client id as `VITE_HF_CLIENT_ID` (public by design; a repo variable the
-      Pages workflow passes through is fine). The sign-in button hides itself while it is
-      empty, so the site works anonymously today.
+      Then set it as the repository **variable** `VITE_HF_CLIENT_ID` (Settings → Secrets
+      and variables → Actions → Variables) — `pages.yml` already passes it to the build.
+      Public by design: a PKCE client id identifies the app, it does not authorise
+      anything. The sign-in button hides itself while it is empty, so the site works
+      anonymously today.
       **Then run the spike that is still outstanding:** an 8-minute WAV on `best` requests
       159 s, which exceeds the anonymous 120 s pool but fits a free account's 300 s. Run it
       signed out, then signed in, and read `process_completed.output.error`: `120s left`
