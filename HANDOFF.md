@@ -165,6 +165,19 @@ the (separate, private) audiosaw repo.
   side upgrades. WebGPU is the path that actually works and it is in every current
   browser; without it the run screen recommends the server instead.
 
+- **2026-09-23 (Opus, done): both audiosaw PRs merged; the site is live and verified.**
+  Final sweep against production: `/stemflipper` 301s to `/stemflipper/`, that serves the
+  app, an unknown path still 404s, the homepage card and the stem-splitter cross-link are
+  in place, the sitemap lists it and the service worker still bypasses it. The demo flow
+  and a **full in-browser run** (27 s, WebGPU, 43 notes, valid MIDI, nothing uploaded)
+  both pass against audiosaw.com itself.
+
+  **Everything in PLAN_V3 is done except N2 (Sign in with Hugging Face)**, which needs an
+  OAuth client id only the account owner can create. It matters much less than it did
+  when the plan was written: the browser path needs no account at all, so signing in is
+  now an optimisation for the four-stem version rather than the difference between the
+  site working and not.
+
 ## V3 QUEUE
 
 - [x] **N1 — shell, router, job state machine, screens, mock backend, smoke scenarios.**
