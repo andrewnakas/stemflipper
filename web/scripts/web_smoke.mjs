@@ -309,6 +309,17 @@ async function scenarioDemo(page) {
   note(`play: clock ${played.t.toFixed(2)}s, ctx ${played.state}`);
   if (played.state === "running" && !(played.t > 0)) problems.push("pressing play did not advance the clock");
 
+  // The editor hand-off: build the project file and check it against the rules
+  // audiosaw's own reader enforces — stored entries, project.json, and every clip
+  // pointing at a source that is really in the file.
+  const proj = await page.evaluate(() => {
+    const c = [...document.querySelectorAll(".card")].find((x) => /Edit on a timeline/.test(x.textContent));
+    return { present: !!c, tracks: c ? c.querySelectorAll("input[type=checkbox]").length : 0 };
+  });
+  note(`send to editor: ${proj.tracks} tracks selectable`);
+  if (!proj.present) problems.push("no way to send the tracks to a timeline editor");
+  if (proj.tracks < 2) problems.push(`expected several selectable tracks, saw ${proj.tracks}`);
+
   // Sheet music: the notation has to actually draw, for a pitched part and for drums.
   await page.evaluate(() => {
     [...document.querySelectorAll("button")].find((b) => /sheet music/i.test(b.textContent))?.click();

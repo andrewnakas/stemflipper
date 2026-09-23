@@ -15,6 +15,7 @@ import { navigate } from "../router";
 import { AttributionLine } from "./Attribution";
 import { Downloads } from "./Downloads";
 import { KeepButton } from "./KeepButton";
+import { SendToEditor } from "./SendToEditor";
 import { SongFacts, SongHeader } from "./SongFacts";
 import { StemRow } from "./StemRow";
 import { TransportBar } from "./TransportBar";
@@ -101,7 +102,10 @@ export function ListenScreen() {
         </div>
 
         <div class="grid-2" style={{ marginTop: "var(--s5)", alignItems: "start" }}>
-          <Downloads result={result} />
+          <div class="stack" style={{ gap: "var(--s4)" }}>
+            <SendToEditor result={result} />
+            <Downloads result={result} />
+          </div>
           <Card class="stack" style={{ gap: "var(--s3)" }}>
             <div class="card__title">About this song</div>
             <SongFacts project={project} />
