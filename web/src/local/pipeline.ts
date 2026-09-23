@@ -5,9 +5,15 @@
  * contract the Space produces, so Listen, Studio, note editing and every export work on
  * it unchanged; only `separation.device` and `grid.source` say where it came from.
  *
- * Two stems rather than four: the four-stem models that would fit in a browser do not
- * exist yet (Demucs' ONNX export is 158 MB and onnxruntime-web cannot load it). What this
- * does give is unlimited, private, account-free runs, which the shared GPU pool cannot.
+ * Two stems rather than four. What this does give is unlimited, private, account-free
+ * runs, which the shared GPU pool cannot.
+ *
+ * The reason for two was that no four-stem model fit in a browser: Demucs' ONNX export
+ * was 158 MB and onnxruntime-web could not load it. That stopped being true in 2026 —
+ * working htdemucs ONNX exports now exist (157 MB fp16, MIT) and `timcsy/demucs-web`
+ * drives one from onnxruntime-web on WebGPU. Closing this gap is the next planned piece
+ * of work; see HANDOFF.md, "NEXT UP — WebGPU parity", for the exports, their unproven
+ * status, and the COOP/COEP headers the WASM fallback needs.
  */
 
 import { encodeWav } from "../export/wav";

@@ -26,6 +26,49 @@ the (separate, private) audiosaw repo.
 
 ## V3 STATUS
 
+### NEXT UP (agreed with the user 2026-09-23) — WebGPU parity: close the stem gap
+
+The in-browser path should get as good as the cloud GPU, and the specific thing standing
+in the way is **two stems versus four**. Do this before picking up anything else.
+
+**The comment at `web/src/local/pipeline.ts:8` is now out of date.** It says the
+four-stem models that would fit in a browser "do not exist yet — Demucs' ONNX export is
+158 MB and onnxruntime-web cannot load it". True when written, not any more. Checked on
+2026-09-23:
+
+- `timcsy/demucs-web` (MIT) wraps htdemucs ONNX for onnxruntime-web on WebGPU/WASM and
+  produces exactly the four stems we want.
+- `StemSplitio/htdemucs-onnx` (MIT) — **301 MB fp32, 157 MB fp16**, sizes read off the
+  CDN rather than the model card. ⚠️ **0 downloads, 0 likes: nobody has stress-tested
+  it.** Unproven.
+- Adjacent: `StemSplit/demucs-onnx` (export tooling), `demucs-onnx` on PyPI
+  (htdemucs / htdemucs_ft / htdemucs_6s).
+
+**Run it as a spike, not a commit.** Prove one song end-to-end on WebGPU; check memory on
+a **full-length** song rather than a clip; compare plain htdemucs against the Space's
+RoFormer + htdemucs_ft chain. Only then touch UI. The costs to weigh honestly: first
+visit goes 64 MB → ~157 MB (cached per device), and local would be roughly the Space's
+`fast` preset, not `best`.
+
+**Cross-origin isolation: reuse audiosaw's, don't redo it.** The WASM fallback needs
+COOP/COEP, previously skipped because self-hosting the ORT wasm costs ~33 MB. audiosaw
+already pays it for `/stem-splitter`: `_headers:79-84`, **`credentialless`** (not
+`require-corp`, so subresources without CORP still load), binaries in `vendor/ort/`. A
+gotcha is already documented there — *a worker spawned from an isolated page must itself
+be served with a COEP header*, or it fails to be created at all, before its first line
+runs, with an opaque error. **New wrinkle here:** `/stemflipper/*` comes from a Pages
+**Function**, and `_headers` does not apply to Function responses, so the headers belong
+in `functions/stemflipper/[[path]].js`.
+
+**Free-compute alternatives were investigated on 2026-09-23 and all rejected — do not
+re-research them.** Another free HF CPU Space: blocked, HF now returns 402 for new
+cpu-basic Spaces (ours is grandfathered), and it would be ~7× realtime anyway.
+Cloudflare Workers AI: real free allowance but the audio catalog is Whisper, no
+separation model. Colab / Kaggle / GitHub Actions: all forbid backend-service use in
+their terms. Oracle Always Free: would work, but it is a server to own, still ~7×
+realtime. **The conclusion was: add no service, close the gap in the browser.**
+
+
 - **2026-09-22 (Opus, N1-N6 except sign-in):** The site is rebuilt and live.
 
   **Frontend.** `web/src/ui/App.tsx` went from 715 lines holding every screen to a
