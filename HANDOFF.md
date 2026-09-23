@@ -137,6 +137,15 @@ the (separate, private) audiosaw repo.
       for a run *in progress*: whether the Gradio queue replays a stream to a returning
       `session_hash` is the one N0 question left unverified, and a "reconnect" that
       silently did nothing would be worse than saying a reload loses the run.
+- [ ] **GPU_COST re-measure (P6.5) — data collected, do NOT retune on it yet.**
+      Measured on the live Space this session: `fast` on a 16 s file requested 30 s and
+      used **13.3 s**; `balanced` on a 30 s file requested 30 s and used **12.4 s**.
+      Both sit on `estimate_gpu_seconds`'s 30 s floor, so they say nothing about the
+      per-minute slope — retuning `GPU_COST` from them would be overfitting to the clamp.
+      What they do show is the direction of the risk: ZeroGPU gates on the **requested**
+      duration, so over-requesting refuses visitors who would in fact have fitted. One
+      real full-length run on `balanced` and one on `best` would settle it.
+
 - [ ] **N7 — redeploy the Space.** `app.py::EDITOR_URL` now points at
       `audiosaw.com/stemflipper/` but the live Space still serves the old link. Needs
       `.venv/bin/hf auth login` then `.venv/bin/python scripts/deploy_space.py`. No local
