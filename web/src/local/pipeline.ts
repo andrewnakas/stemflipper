@@ -82,19 +82,44 @@ function peakDb(chs: Float32Array[]): number {
   return peak > 0 ? Number((20 * Math.log10(peak)).toFixed(1)) : -120;
 }
 
-/** Talk to the worker, resolving on the first message whose type matches. */
-function ask<T>(worker: Worker, message: unknown, onStatus?: (m: any) => void, transfer: Transferable[] = []): Promise<T> {
+/**
+ * Talk to the worker, resolving on its first non-status reply.
+ *
+ * Rejects the moment the signal aborts rather than at the next stage boundary. Without
+ * that, cancelling during a four-minute separation showed "Cancelled" immediately while
+ * the worker kept the GPU busy to the end of the job.
+ */
+function ask<T>(
+  worker: Worker,
+  message: unknown,
+  onStatus?: (m: any) => void,
+  transfer: Transferable[] = [],
+  signal?: AbortSignal,
+): Promise<T> {
   return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      worker.removeEventListener("message", onMessage);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(new DOMException("Aborted", "AbortError"));
+    };
     const onMessage = (e: MessageEvent) => {
       const m = e.data || {};
       if (m.type === "status" || m.type === "note" || m.type === "ready") {
         onStatus?.(m);
         return;
       }
-      worker.removeEventListener("message", onMessage);
+      cleanup();
       if (m.type === "error") reject(new Error(m.message || "The local engine failed."));
       else resolve(m as T);
     };
+    if (signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
     worker.addEventListener("message", onMessage);
     worker.postMessage(message, transfer);
   });
@@ -119,6 +144,10 @@ export async function runLocally(
   const analysis = analyseLocally(mix);
 
   const worker = new Worker(new URL("./local.worker.ts", import.meta.url));
+  // Terminating is the only thing that actually stops work in flight: the worker is busy
+  // inside a model run and will not see a message until the chunk finishes.
+  const stop = () => worker.terminate();
+  signal?.addEventListener("abort", stop, { once: true });
   let backend = "wasm";
 
   try {
@@ -135,6 +164,7 @@ export async function runLocally(
         }
       },
       [left.buffer, right.buffer],
+      signal,
     );
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
@@ -153,6 +183,8 @@ export async function runLocally(
         worker,
         { type: "transcribe", mono: Float32Array.from(mono.getChannelData(0)), opts, label: opts.label },
         (m) => m.type === "status" && report("transcribe", m.pct ?? null, m.detail),
+        [],
+        signal,
       );
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
@@ -216,6 +248,7 @@ export async function runLocally(
       backend,
     };
   } finally {
+    signal?.removeEventListener("abort", stop);
     worker.terminate();
   }
 }

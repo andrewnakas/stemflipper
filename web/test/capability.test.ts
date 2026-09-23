@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatEstimate, localCapability, localEstimateSeconds } from "../src/local/capability";
+import { formatEstimate, localCapability, localEstimateSeconds, preferLocal } from "../src/local/capability";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -58,5 +58,31 @@ describe("estimates", () => {
     expect(formatEstimate(250)).toBe("about 4 minutes");
     expect(formatEstimate(6600)).toBe("about 1.8 hours");
     expect(formatEstimate(Infinity)).toBe("not possible here");
+  });
+});
+
+describe("choosing a default", () => {
+  it("prefers local for a normal song on a GPU", () => {
+    withEnv({ gpu: true });
+    expect(preferLocal(210)).toBe(true);
+  });
+
+  it("does not default an 8-minute song into a four-hour local run", () => {
+    withEnv({ gpu: false, isolated: false, cores: 8 });
+    expect(localEstimateSeconds(480)).toBeGreaterThan(3 * 3600);
+    expect(preferLocal(480)).toBe(false);
+  });
+
+  it("does not default to local even for a short clip when there is no GPU", () => {
+    // It is still offered — just not chosen for someone who did not ask.
+    withEnv({ gpu: false, isolated: true, cores: 8 });
+    expect(preferLocal(20)).toBe(false);
+  });
+
+  it("never defaults to a browser that cannot do it", () => {
+    vi.stubGlobal("navigator", { hardwareConcurrency: 4 });
+    vi.stubGlobal("Worker", undefined);
+    vi.stubGlobal("WebAssembly", {});
+    expect(preferLocal(30)).toBe(false);
   });
 });

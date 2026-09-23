@@ -58,6 +58,20 @@ export function localEstimateSeconds(durationS: number, cap = localCapability())
   return Math.round(15 + durationS * cap.costPerSecond);
 }
 
+/**
+ * Should running locally be the default for THIS song on THIS device?
+ *
+ * Capability alone is not enough: a 30-second clip is fine even on one CPU core, while an
+ * 8-minute song without a GPU is four hours. Both were offered as the default before this.
+ */
+export function preferLocal(durationS: number, cap = localCapability()): boolean {
+  if (cap.speed === "unsupported") return false;
+  return cap.recommended && localEstimateSeconds(durationS, cap) <= MAX_COMFORTABLE_S;
+}
+
+/** Beyond this, a local run is something to choose deliberately, not to be defaulted into. */
+export const MAX_COMFORTABLE_S = 15 * 60;
+
 export function formatEstimate(seconds: number): string {
   if (!Number.isFinite(seconds)) return "not possible here";
   if (seconds < 90) return `about ${Math.round(seconds)} seconds`;

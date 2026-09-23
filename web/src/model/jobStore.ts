@@ -22,7 +22,7 @@ import { getSong, releaseSource, saveSong, sourceFor } from "./persist";
 import { openBundleFile } from "./zipLoader";
 import { preflight } from "./preflight";
 import { estimateWallSeconds, pickPreset } from "./quota";
-import { localCapability, localEstimateSeconds } from "../local/capability";
+import { localEstimateSeconds, preferLocal } from "../local/capability";
 import { backend, mixer, notesByTrack, spaceId } from "./store";
 import type { Project } from "./types";
 
@@ -120,7 +120,7 @@ export async function pickFile(file: File): Promise<void> {
   dispatch({ type: "pick", file: meta });
   suggestPreset(meta);
   if (!options.value.presetTouched) {
-    options.value = { ...options.value, where: localCapability().recommended ? "browser" : "server" };
+    options.value = { ...options.value, where: preferLocal(meta.durationS ?? 210) ? "browser" : "server" };
   }
   navigate("run");
 }

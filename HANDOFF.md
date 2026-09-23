@@ -144,6 +144,20 @@ the (separate, private) audiosaw repo.
   including the model download over the internet, WebGPU, 43 notes, audible render, valid
   MIDI — with nothing uploaded.
 
+  **Two gaps found by testing a full-length track (3:59) rather than a clip:**
+  1. **Cancel did not cancel.** The abort signal was only checked between stages, so
+     pressing Cancel during a four-minute separation showed "Cancelled" at once while the
+     worker kept the GPU busy to the end of the job. The worker is terminated on abort now
+     — terminating is the only thing that stops work already inside a model run, since the
+     worker cannot see a message until the current chunk finishes.
+  2. **The default ignored song length.** It came from device capability alone, so an
+     8-minute song on a machine without WebGPU would have been defaulted into a *four
+     hour* local run. `preferLocal(duration)` now also requires the estimate to be under
+     15 minutes; longer is still offered, just not chosen for someone who did not ask.
+
+  Verified on the real track: 54 chunks, main-thread heap flat at ~90 MB (the large
+  buffers live in the worker), and the "about 5 minutes" estimate matched.
+
   **COOP/COEP for the threaded path was considered and deliberately NOT done.** It would
   take a machine without WebGPU from 31x realtime to 10x — 108 minutes to 35 for a 3:30
   song, so still unusable — and it costs either 33 MB of onnxruntime wasm committed here
