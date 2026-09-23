@@ -17,10 +17,12 @@ import { BUNDLE_TTL_H, type Preset } from "../config";
 import { navigate } from "../ui/router";
 import { effectiveToken, tier } from "./auth";
 import { classifyError, isJobError, reduce, type FileMeta, type JobEvent, type JobError, type JobPhase, type JobResult } from "./job";
-import { openProject } from "./playback";
+import { applyMixerNow, openProject } from "./playback";
+import { getSong, releaseSource, saveSong, sourceFor } from "./persist";
+import { openBundleFile } from "./zipLoader";
 import { preflight } from "./preflight";
 import { estimateWallSeconds, pickPreset } from "./quota";
-import { backend, spaceId } from "./store";
+import { backend, mixer, notesByTrack, spaceId } from "./store";
 import type { Project } from "./types";
 
 export const job = signal<JobPhase>({ kind: "idle" });
@@ -80,17 +82,28 @@ export function setSix(six: boolean): void {
   options.value = { ...options.value, six };
 }
 
-/** Inspect a dropped file and show it, without starting anything. */
+/**
+ * Inspect a dropped file and show it, without starting anything.
+ *
+ * A .zip is a bundle someone downloaded earlier, not a song to process — opening it is
+ * free, instant and works with no server at all, so it takes precedence.
+ */
 export async function pickFile(file: File): Promise<void> {
+  if (/\.zip$/i.test(file.name) || file.type === "application/zip") {
+    await openZip(file);
+    return;
+  }
   lastFile = file;
   jobLog.value = [];
   const { meta, problem } = await preflight(file);
   if (problem) {
     dispatch({ type: "fail", error: problem });
+    navigate("run");
     return;
   }
   dispatch({ type: "pick", file: meta });
   suggestPreset(meta);
+  navigate("run");
 }
 
 export function reset(): void {
@@ -263,6 +276,68 @@ export async function openFixture(name: string): Promise<void> {
   await openProject(project, source, (loaded, total) => dispatch({ type: "assets", loaded, total }));
   dispatch({ type: "ready", result: { project, source, zipUrl: null, zipBytes: null, expiresAt: null } });
   navigate("listen");
+}
+
+/** Reopen a bundle zip the visitor already has. */
+export async function openZip(file: File): Promise<void> {
+  try {
+    const opened = await openBundleFile(file);
+    attribution.value = null;
+    releaseCurrentBlobSource();
+    blobSource = opened.dispose;
+    dispatch({ type: "assets", loaded: 0, total: 0 });
+    await openProject(opened.project, opened.source, (loaded, total) =>
+      dispatch({ type: "assets", loaded, total }),
+    );
+    dispatch({
+      type: "ready",
+      result: { project: opened.project, source: opened.source, zipUrl: null, zipBytes: file.size, expiresAt: null },
+    });
+    navigate("listen");
+  } catch (e) {
+    dispatch({ type: "fail", error: classifyError(e) });
+    navigate("run");
+  }
+}
+
+/** Reopen a song kept in this browser. */
+export async function openSaved(id: string): Promise<void> {
+  const song = await getSong(id);
+  if (!song) throw new Error("That song is no longer stored in this browser.");
+  const source = sourceFor(song);
+  releaseCurrentBlobSource();
+  blobSource = () => releaseSource(source);
+  attribution.value = song.attribution;
+  dispatch({ type: "assets", loaded: 0, total: 0 });
+  await openProject(song.project, source, (loaded, total) => dispatch({ type: "assets", loaded, total }));
+  if (song.mixer) mixer.value = song.mixer as typeof mixer.value;
+  applyMixerNow();
+  dispatch({
+    type: "ready",
+    result: { project: song.project, source, zipUrl: null, zipBytes: song.bytes, expiresAt: null },
+  });
+  navigate("listen");
+}
+
+/** Store the current song so it survives the bundle expiring on the server. */
+export async function keepCurrent(onProgress?: (done: number, total: number) => void): Promise<void> {
+  const phase = job.value;
+  if (phase.kind !== "ready") throw new Error("There is nothing loaded to keep.");
+  await saveSong(
+    phase.result.project,
+    phase.result.source,
+    notesByTrack.value,
+    mixer.value,
+    attribution.value,
+    onProgress,
+  );
+}
+
+/** Object URLs from a previously opened blob bundle. */
+let blobSource: (() => void) | null = null;
+function releaseCurrentBlobSource(): void {
+  blobSource?.();
+  blobSource = null;
 }
 
 function rememberRun(hash: string, eventId: string | null, cfg: BackendConfig, ref: FileRef, preset: Preset, six: boolean): void {

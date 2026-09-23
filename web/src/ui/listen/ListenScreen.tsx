@@ -14,6 +14,7 @@ import { Button, Card, ProgressBar } from "../components/primitives";
 import { navigate } from "../router";
 import { AttributionLine } from "./Attribution";
 import { Downloads } from "./Downloads";
+import { KeepButton } from "./KeepButton";
 import { SongFacts, SongHeader } from "./SongFacts";
 import { StemRow } from "./StemRow";
 import { TransportBar } from "./TransportBar";
@@ -79,6 +80,15 @@ export function ListenScreen() {
           Studio lets you edit the transcribed notes and blend the original stems against the
           synth and sampler rebuilds.
         </p>
+
+        <div class="row wrap" style={{ gap: "var(--s2)", marginBottom: "var(--s3)" }}>
+          <KeepButton />
+          {result.expiresAt ? (
+            <span class="xs dim">
+              The download links above expire when the server clears this run.
+            </span>
+          ) : null}
+        </div>
 
         <TransportBar duration={project.song.duration} />
 

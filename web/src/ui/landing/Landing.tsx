@@ -8,9 +8,9 @@ import { dailyBudgetS, estimateGpuSeconds, formatSeconds, songsPerDay } from "..
 import { Button, Card } from "../components/primitives";
 import { Notice } from "../components/Notice";
 import { toast } from "../components/Toast";
-import { navigate } from "../router";
 import { fetchJson } from "../../api/assets";
 import { DropVeil, DropZone } from "./DropZone";
+import { Recent } from "./Recent";
 
 const TYPICAL_SONG_S = 210; // 3:30, for the "how many songs a day" sums
 
@@ -26,10 +26,9 @@ export function Landing() {
       .catch(() => undefined);
   }, []);
 
-  const take = async (file: File) => {
-    await pickFile(file);
-    navigate("run");
-  };
+  // pickFile decides where a file leads: a song goes to the run screen, a bundle zip
+  // opens straight into Listen. Navigating here as well overrode the latter.
+  const take = (file: File) => void pickFile(file);
 
   const hearExample = async () => {
     setLoadingDemo(true);
@@ -135,6 +134,8 @@ export function Landing() {
           </Notice>
         </div>
       </section>
+
+      <Recent />
 
       <FreeTier />
 

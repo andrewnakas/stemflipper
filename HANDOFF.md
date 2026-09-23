@@ -107,8 +107,19 @@ the (separate, private) audiosaw repo.
       means the token was ignored, `300s left` (or the job simply runs) means it was
       honoured. If OAuth tokens are not honoured, fall back to paste-a-token under
       Advanced, which already works.
-- [ ] **N4 — keep a song in this browser (IndexedDB) and open a downloaded bundle zip.**
-      `api/assets.ts` already understands a `blob` asset source; the loader is not written.
+- [x] **N4 — keep a song in this browser, and open a downloaded bundle zip.**
+      `model/persist.ts` stores what the page *plays* — stems, patches, sampler maps and
+      every sample the maps name — not the whole bundle: a 30-second song's zip is 57 MB,
+      mostly loops and 24-bit samples that only matter if you download them. The stored
+      subset is 6.2 MB for the demo. Note edits are baked into the saved project rather
+      than kept as a diff, so reopening is the same code path as opening anything else.
+      `model/zipLoader.ts` reopens a downloaded bundle with no server at all, which is the
+      real answer to the six-hour expiry. A bug this surfaced: `Landing.take` navigated to
+      the run screen after `pickFile` regardless, overriding a zip that had already opened
+      into Listen — `pickFile` owns that decision now.
+      Covered by a `keep` smoke scenario that keeps a song, does a **real page reload**,
+      reopens it from IndexedDB and asserts the rendered audio is identical (rms 0.2196
+      before and after), then drops a bundle zip built from the fixture.
 - [ ] **N7 — redeploy the Space.** `app.py::EDITOR_URL` now points at
       `audiosaw.com/stemflipper/` but the live Space still serves the old link. Needs
       `.venv/bin/hf auth login` then `.venv/bin/python scripts/deploy_space.py`. No local

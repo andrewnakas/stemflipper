@@ -39,6 +39,7 @@ export function DropZone(props: { onFile: (f: File) => void; disabled?: boolean 
       <span class="dropzone__hint">
         mp3, wav, flac, m4a · up to {LIMITS.maxMinutes} minutes · {LIMITS.maxBytesLabel}
       </span>
+      <span class="dropzone__hint">or drop a bundle .zip you downloaded earlier</span>
       <input
         ref={input}
         type="file"

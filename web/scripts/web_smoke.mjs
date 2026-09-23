@@ -6,6 +6,7 @@
  *   demo     the front door: landing -> Hear an example -> Listen -> Studio
  *   upload   drop a file and watch a whole run against scripts/mock_backend.mjs
  *   quota    the run fails on ZeroGPU quota and offers a way out
+ *   keep     keep a song in the browser, reload, reopen it and hear it
  *
  * The upload and quota scenarios need the mock backend running:
  *   node scripts/mock_backend.mjs --port 7861 [--mode quota]
@@ -13,9 +14,11 @@
  * Usage: node scripts/web_smoke.mjs [baseUrl] [--scenario name] [--backend url]
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import { zipSync } from "fflate";
 import puppeteer from "puppeteer";
 
 const argv = process.argv.slice(2);
@@ -367,9 +370,99 @@ async function scenarioQuota(page) {
   if (/Traceback|Error:/.test(panel.text)) problems.push("the error panel is showing a raw error");
 }
 
+async function scenarioKeep(page) {
+  await page.goto(`${BASE}/?fixture=${FIXTURE}`, { waitUntil: "networkidle0", timeout: 60_000 });
+  await page.waitForSelector(".stemrow", { timeout: 30_000 });
+
+  const before = await page.evaluate(() => window.__sf.renderMix({ to: 2 }));
+
+  await page.evaluate(() => {
+    [...document.querySelectorAll("button")].find((b) => /keep in this browser/i.test(b.textContent))?.click();
+  });
+  await page.waitForFunction(() => /Kept in this browser/.test(document.body.textContent), { timeout: 60_000 });
+  note("kept");
+
+  // A real reload: nothing in memory survives, so what comes back came from IndexedDB.
+  await page.goto(`${BASE}/`, { waitUntil: "networkidle0", timeout: 60_000 });
+  await page.waitForFunction("window.__sf && window.__sf.ready === true", { timeout: 30_000 });
+  const listed = await page.evaluate(() =>
+    [...document.querySelectorAll(".card--quiet")].map((c) => c.textContent.replace(/\s+/g, " ").trim()),
+  );
+  note(`after reload: ${listed.join(" | ") || "(nothing listed)"}`);
+  if (!listed.length) {
+    problems.push("a kept song did not survive a reload");
+    return;
+  }
+
+  await page.evaluate(() => {
+    [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Open")?.click();
+  });
+  await page.waitForSelector(".stemrow", { timeout: 30_000 });
+  await page.evaluate(() => window.__sf.waitForInstruments());
+
+  const state = await page.evaluate(() => ({
+    kind: window.__sf.state.source?.kind,
+    stems: document.querySelectorAll(".stemrow").length,
+    backendFree: !JSON.stringify(window.__sf.state.source).includes("hf.space"),
+  }));
+  const after = await page.evaluate(() => window.__sf.renderMix({ to: 2 }));
+  note(`reopened from ${state.kind}: ${state.stems} stems, rms ${after.rms.toFixed(4)} (was ${before.rms.toFixed(4)})`);
+
+  if (state.kind !== "blob") problems.push(`reopened song should read from stored blobs, got "${state.kind}"`);
+  if (!state.backendFree) problems.push("a kept song still points at the server");
+  if (!(after.rms > 0.001)) problems.push("a kept song reopened silent");
+  // Same audio in, same audio out — the stored stems are the ones it was playing.
+  if (Math.abs(after.rms - before.rms) > 0.02) {
+    problems.push(`kept audio differs from the original (rms ${before.rms.toFixed(4)} -> ${after.rms.toFixed(4)})`);
+  }
+
+  // The other durable copy: the bundle zip someone downloaded. Dropping it back on the
+  // page must reopen the song with no server and no stored state.
+  const zipPath = bundleZip(FIXTURE);
+  await page.goto(`${BASE}/`, { waitUntil: "networkidle0", timeout: 60_000 });
+  await page.waitForFunction("window.__sf && window.__sf.ready === true", { timeout: 30_000 });
+  const input = await page.$('input[type="file"]');
+  await input.uploadFile(zipPath);
+  await page.waitForSelector(".stemrow", { timeout: 30_000 });
+  const fromZip = await page.evaluate(() => ({
+    route: window.__sf.route,
+    kind: window.__sf.state.source?.kind,
+    stems: document.querySelectorAll(".stemrow").length,
+    tracks: window.__sf.state.project?.tracks?.length,
+  }));
+  note(`dropped bundle zip: route=${fromZip.route} source=${fromZip.kind} stems=${fromZip.stems}`);
+  if (fromZip.route !== "listen") problems.push("dropping a bundle zip did not open it");
+  if (fromZip.kind !== "blob") problems.push(`a dropped zip should read from blobs, got "${fromZip.kind}"`);
+  if (!fromZip.stems) problems.push("a dropped zip opened with no stems");
+}
+
+/** Zip a fixture directory into a bundle, the shape the pipeline ships. */
+function bundleZip(name) {
+  const dir = fileURLToPath(new URL(`../public/fixtures/${name}`, import.meta.url));
+  const files = {};
+  const walk = (d) => {
+    for (const entry of readdirSync(d)) {
+      const full = join(d, entry);
+      if (statSync(full).isDirectory()) walk(full);
+      else files[relative(dir, full).split("\\").join("/")] = new Uint8Array(readFileSync(full));
+    }
+  };
+  walk(dir);
+  const out = join(tmpdir(), "stemflipper-smoke", `${name}-bundle.zip`);
+  mkdirSync(join(tmpdir(), "stemflipper-smoke"), { recursive: true });
+  writeFileSync(out, zipSync(files));
+  return out;
+}
+
 /** ------------------------------------------------------------------- driver */
 
-const SCENARIOS = { fixture: scenarioFixture, demo: scenarioDemo, upload: scenarioUpload, quota: scenarioQuota };
+const SCENARIOS = {
+  fixture: scenarioFixture,
+  demo: scenarioDemo,
+  upload: scenarioUpload,
+  quota: scenarioQuota,
+  keep: scenarioKeep,
+};
 
 try {
   const run = SCENARIOS[SCENARIO];

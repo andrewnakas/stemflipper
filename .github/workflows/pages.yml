@@ -32,9 +32,10 @@ jobs:
       - run: node scripts/make_ci_fixture.mjs
       - run: npm run build
       - name: Headless smoke test
-        # Four scenarios: the deep bundle checks, the front door, and a whole run against
-        # a mock Space that replays SSE frames recorded from the real one — including the
-        # ZeroGPU quota refusal, which is the normal way a visitor's run fails.
+        # Five scenarios: the deep bundle checks, the front door, a whole run against a
+        # mock Space that replays SSE frames recorded from the real one (including the
+        # ZeroGPU quota refusal, which is the normal way a visitor's run fails), and the
+        # two offline paths — a song kept in IndexedDB and a downloaded bundle zip.
         run: |
           npx puppeteer browsers install chrome
           npm run preview &
@@ -46,6 +47,7 @@ jobs:
           node scripts/web_smoke.mjs --scenario demo
           node scripts/web_smoke.mjs --scenario upload --backend http://localhost:7861
           node scripts/web_smoke.mjs --scenario quota   --backend http://localhost:7862
+          node scripts/web_smoke.mjs --scenario keep    --fixture demo
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
