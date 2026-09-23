@@ -28,7 +28,7 @@ WORK_ROOT = Path(os.environ.get("STEMFLIPPER_WORK", tempfile.gettempdir())) / "s
 WORK_ROOT.mkdir(parents=True, exist_ok=True)
 WORKDIR_TTL_H = 6
 
-EDITOR_URL = "https://andrewnakas.github.io/stemflipper/"
+EDITOR_URL = "https://audiosaw.com/stemflipper/"
 
 # PANNs CNN14 (~340 MB) is off by default so a cold Space isn't stalled by a weights
 # download on the first request; the router degrades to spectral cues without it.

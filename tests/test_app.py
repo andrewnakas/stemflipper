@@ -30,7 +30,13 @@ def test_app_roundtrip(app_module, fixture_song, monkeypatch):
             False,
             api_name="/flip",
         )
+        # INVARIANT: flip returns [zip, summary, editor link, project] in that order.
+        # The web app reads data[0] for the download and data[3] for everything it
+        # renders, positionally — reordering these outputs breaks the site silently.
+        assert len(result) == 4, "the web app addresses these outputs by position"
         zip_path, summary, _link, project = result
+        assert str(zip_path).endswith(".zip"), "output 0 must be the bundle zip"
+        assert isinstance(project, dict), "output 3 must be project.json"
         with zipfile.ZipFile(zip_path) as zf:
             names = zf.namelist()
             assert any(n.endswith("project.json") for n in names)

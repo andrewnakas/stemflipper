@@ -2,12 +2,125 @@
 
 ---
 
-# v2 REBUILD (approved 2026-09-06) — READ THIS FIRST
+# v3 — the consumer site (started 2026-09-22) — READ THIS FIRST
 
-The v1 build (M0–M7 + 16 loop iterations, logged below) is **superseded**. The approved
-plan is `PLAN_V2.md` (copy of `~/.claude/plans/merry-napping-matsumoto.md`). Do the next
-unchecked task in the V2 PHASE QUEUE, keep `pytest -m "not slow"` green, and update
-**V2 STATUS** before stopping. Do not re-plan.
+The approved plan is `PLAN_V3.md`. v2 built a working pipeline and a working editor; v3
+turns the editor-first page into a site a stranger can use. Keep `pytest -m "not slow"`
+and `npm test` green, keep all four smoke scenarios green, and update **V3 STATUS** before
+stopping.
+
+**What v3 is:** landing → drop a file → live progress → **Listen** (stems, waveforms,
+solo/mute, and every file the run produced) → **Studio** (v2's editor, one click away).
+Sign in with Hugging Face so a visitor spends their own ZeroGPU quota. Lives at
+`audiosaw.com/stemflipper/`, proxied from GitHub Pages by a Cloudflare Pages Function in
+the (separate, private) audiosaw repo.
+
+**New invariants (11-13), in force from now on:**
+11. `flip` returns `[zip, summary, editor link, project]` **in that order**. The web app
+    reads `data[0]` and `data[3]` positionally; reordering breaks the site silently.
+    Pinned by `tests/test_app.py`.
+12. Tokens never appear in URLs, logs or `project.json`. OAuth scope stays
+    `openid profile`; a pasted token defaults to sessionStorage.
+13. An anonymous visitor must be able to complete a run on the default preset. Anything
+    that requires signing in is a bug, not a tier.
+
+## V3 STATUS
+
+- **2026-09-22 (Opus, N1-N6 except sign-in):** The site is rebuilt and live.
+
+  **Frontend.** `web/src/ui/App.tsx` went from 715 lines holding every screen to a
+  25-line shell over a hash router (`ui/router.ts` — Pages and the Cloudflare proxy
+  cannot rewrite unknown paths, and the query string stays for `?fixture` / `?bundle` /
+  `?backend`). Screens are `ui/landing/`, `ui/run/`, `ui/listen/`, `ui/studio/`.
+  `model/job.ts` is a pure state machine for the whole run; `model/jobStore.ts` owns the
+  side effects. Design tokens (`styles/`) are shared with audiosaw.com — paper/ink/amber,
+  Fraunces + IBM Plex Sans bundled and content-hashed — light and dark, with Studio forced
+  dark.
+
+  **Things v2 was producing and never showing:** the bundle zip (`data[0]` was dropped on
+  the floor), SFZ, DecentSampler, Vital, loops, phrases, the DAWproject, chords. All of it
+  is on the Listen screen now, enumerated by `model/bundle.ts`.
+
+  **Measured, not guessed.** Every number below came from a real run:
+  - `rank_eta` is a fixed 300 s guess — a job that took 28 s reported it — so the UI never
+    shows the server's ETA, and `rank 0` is not a queue.
+  - `data[0]` already carries the zip's `url` **and** `size`, so no backend change was
+    needed to show a real download size.
+  - Time-to-playable on the live site was 5.0 s because `Session.load` awaited every
+    sampler zone. It now resolves once the stems can play: **2.4 s**.
+
+  **Five real bugs found and fixed, each by testing rather than reasoning:**
+  1. `openProject` awaited `resumeAudio()`, and outside a user gesture Chrome leaves
+     `AudioContext.resume()` **pending forever** rather than rejecting — so every
+     `?fixture=` / `?bundle=` deep link hung before the first click. CI never caught it
+     because the smoke test launches Chrome with `--autoplay-policy=no-user-gesture-required`.
+  2. Making `load()` return early would have silently emptied the sampler from every
+     exported mix: `renderMix` schedules the whole song in one pass and has no second
+     chance to attach a zone. It now awaits `session.instrumentsReady`.
+  3. `kit.json` / `instrument.json` spell zone paths from the **bundle root**, not
+     relative to themselves — joining them to the instrument's directory silently dropped
+     all 26 sample files from the demo fixture.
+  4. `probeDuration` revoked its `blob:` URL while the audio element was still buffering.
+     The abort is correct; the smoke test now ignores exactly that, by error text.
+  5. The upload smoke scenario used `tests/assets/mix.wav`, which is gitignored — it
+     passed locally and failed in CI. It synthesises its own WAV now.
+
+  **A new ZeroGPU failure mode:** `Expired ZeroGPU proxy token` — a 172 s upload outlived
+  the token the Hub attaches to the request. Classified as retryable, with copy that says
+  so.
+
+  **Testing.** 81 vitest tests (was 47). `web/scripts/mock_backend.mjs` replays SSE frames
+  recorded from a real run (`web/test/fixtures/gradio_frames.jsonl`) so CI can finally
+  walk the upload flow, including the ZeroGPU quota refusal. Four smoke scenarios run in
+  CI: `fixture`, `demo`, `upload`, `quota`. `test/quota.test.ts` reads
+  `stemflipper/neural.py` and fails if a GPU cost changes there without changing
+  `config.ts`.
+
+  **The example** is 30 s of *Another Queen* by Pure Camomile Jam (CC0), run through the
+  live Space and committed at `web/public/fixtures/demo/` (7.8 MB on disk, ~6 MB fetched).
+  Rebuild it with `web/scripts/make_demo_fixture.mjs`.
+
+  **Mobile:** checked at 375 px. Grid children were `min-width: auto`, so one long sample
+  filename widened its column past the viewport; wide tables now scroll inside their own box.
+
+## V3 QUEUE
+
+- [x] **N1 — shell, router, job state machine, screens, mock backend, smoke scenarios.**
+- [x] **N3 — the real demo fixture.**
+- [x] **N5 — responsive pass, Studio re-skin, first-run shortcut sheet.**
+- [x] **N6a — the audiosaw mount.** PR open: andrewnakas/audiosaw#1. Adds
+      `functions/stemflipper/[[path]].js` (verified under `wrangler pages dev`: two real
+      bugs found — a double-decoded gzip body, and `/stemflipper` without a trailing slash
+      404ing every relative asset), `_routes.json`, the tool-graph entry and rail, the
+      service-worker bypass, and a sitemap `EXTRA` list. **User merges.**
+- [ ] **N2 — sign in with Hugging Face.** Built and unit-tested (PKCE against the RFC 7636
+      vector) but **not wired**: needs an OAuth app registered at
+      https://huggingface.co/settings/applications/new — public (no secret), scopes
+      `openid profile`, redirect URIs `https://audiosaw.com/stemflipper/`,
+      `https://andrewnakas.github.io/stemflipper/`, `http://localhost:4173/stemflipper/`.
+      Set the client id as `VITE_HF_CLIENT_ID` (public by design; a repo variable the
+      Pages workflow passes through is fine). The sign-in button hides itself while it is
+      empty, so the site works anonymously today.
+      **Then run the spike that is still outstanding:** an 8-minute WAV on `best` requests
+      159 s, which exceeds the anonymous 120 s pool but fits a free account's 300 s. Run it
+      signed out, then signed in, and read `process_completed.output.error`: `120s left`
+      means the token was ignored, `300s left` (or the job simply runs) means it was
+      honoured. If OAuth tokens are not honoured, fall back to paste-a-token under
+      Advanced, which already works.
+- [ ] **N4 — keep a song in this browser (IndexedDB) and open a downloaded bundle zip.**
+      `api/assets.ts` already understands a `blob` asset source; the loader is not written.
+- [ ] **N7 — redeploy the Space.** `app.py::EDITOR_URL` now points at
+      `audiosaw.com/stemflipper/` but the live Space still serves the old link. Needs
+      `.venv/bin/hf auth login` then `.venv/bin/python scripts/deploy_space.py`. No local
+      `.venv` exists right now (`uv venv --python 3.10 .venv`).
+
+
+---
+
+# v2 REBUILD (approved 2026-09-06) — superseded by v3 above, kept for context
+
+v2 built the pipeline and the editor that v3 wraps in a usable site. Its invariants 7-10
+are still in force. Plan: `PLAN_V2.md`. The v1 build below it is superseded.
 
 **What v2 is:** upload any song → hierarchical separation (RoFormer vocals → htdemucs →
 DrumSep per-piece drums) → per-stem transcription engines → MIDI + drum kits +
