@@ -40,6 +40,12 @@ const INSTRUMENT_HINTS: Record<string, string> = {
   sampler: "used by the editor",
 };
 
+/** project.exports keys are file names, not labels. */
+const EXPORT_LABELS: Record<string, { label: string; hint?: string }> = {
+  dawproject: { label: "DAW project", hint: "Bitwig, Studio One, Cubase" },
+  readme: { label: "What is in this bundle", hint: "plain text" },
+};
+
 export function bundleGroups(project: Project): BundleGroup[] {
   const stems: BundleFile[] = [];
   const midi: BundleFile[] = [];
@@ -88,12 +94,8 @@ export function bundleGroups(project: Project): BundleGroup[] {
 
   for (const [key, rel] of Object.entries(project.exports || {})) {
     if (!rel) continue;
-    other.push({
-      rel,
-      label: key === "dawproject" ? "DAW project" : key,
-      filename: basename(rel),
-      hint: key === "dawproject" ? "Bitwig, Studio One, Cubase" : undefined,
-    });
+    const known = EXPORT_LABELS[key];
+    other.push({ rel, label: known?.label ?? key, filename: basename(rel), hint: known?.hint });
   }
 
   return [
@@ -102,12 +104,52 @@ export function bundleGroups(project: Project): BundleGroup[] {
     { id: "instruments", title: "Instruments", blurb: "Built from this song's own audio.", files: instruments },
     { id: "loops", title: "Loops", blurb: "Cut at real downbeats, named with tempo and key.", files: loops },
     { id: "phrases", title: "Phrases", blurb: "Vocal chops bounded by silence.", files: phrases },
-    { id: "project", title: "Project", blurb: "Open the whole arrangement in a DAW.", files: other },
+    {
+      id: "project",
+      title: "Project",
+      // The blurb has to follow what is actually here: a bundle whose DAW project was
+      // trimmed out still had a "Project" group promising the whole arrangement, and
+      // delivering a README.
+      blurb: other.some((f) => f.rel.endsWith(".dawproject"))
+        ? "Open the whole arrangement in a DAW."
+        : "Notes that came with the bundle.",
+      files: other,
+    },
   ].filter((g) => g.files.length > 0) as BundleGroup[];
 }
 
-export function countFiles(project: Project): number {
-  return bundleGroups(project).reduce((n, g) => n + g.files.length, 0);
+/**
+ * Every path the bundle references, including the samples named inside the instrument
+ * files rather than in project.json. Needed to zip "everything" without the server.
+ */
+export async function allBundlePaths(
+  project: Project,
+  readJson: (rel: string) => Promise<unknown>,
+): Promise<string[]> {
+  const paths = new Set<string>();
+  const instruments: string[] = [];
+
+  for (const g of bundleGroups(project)) {
+    for (const f of g.files) {
+      paths.add(f.rel);
+      if (g.id === "instruments" && f.rel.endsWith(".json")) instruments.push(f.rel);
+    }
+  }
+
+  for (const rel of instruments) {
+    try {
+      const inst = (await readJson(rel)) as {
+        zones?: { path?: string }[];
+        pieces?: Record<string, { zones?: { path?: string }[] }>;
+      };
+      const zones = inst.zones || Object.values(inst.pieces || {}).flatMap((p) => p.zones || []);
+      // Zone paths are spelled from the BUNDLE root, not relative to the instrument file.
+      for (const z of zones) if (z.path) paths.add(z.path.replace(/^\/+/, ""));
+    } catch {
+      // A missing instrument file means fewer samples in the zip, not a failed download.
+    }
+  }
+  return [...paths];
 }
 
 function formatClock(s: number): string {

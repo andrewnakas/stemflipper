@@ -7,9 +7,11 @@
 
 import { useState } from "preact/hooks";
 import { assetUrl } from "../../api/assets";
-import { bundleGroups, countFiles } from "../../model/bundle";
+import { bundleGroups } from "../../model/bundle";
 import { writeMidi } from "../../export/midi";
-import { notesByTrack } from "../../model/store";
+import { zipWholeBundle } from "../../export/wholeBundle";
+import { notesByTrack, project as projectSignal } from "../../model/store";
+import { toast } from "../components/Toast";
 import type { JobResult } from "../../model/job";
 import { formatBytes } from "../../model/preflight";
 import { Button, Card } from "../components/primitives";
@@ -17,7 +19,6 @@ import { Disclosure } from "../components/Disclosure";
 
 export function Downloads({ result }: { result: JobResult }) {
   const groups = bundleGroups(result.project);
-  const total = countFiles(result.project);
   // A run done in the browser has notes but no .mid files on disk. MIDI is the headline
   // promise, so generate it here rather than making people go through Studio's exporter.
   const hasMidiFiles = groups.some((g) => g.id === "midi");
@@ -29,8 +30,11 @@ export function Downloads({ result }: { result: JobResult }) {
 
       {result.zipUrl ? (
         <>
+          {/* No file count here: project.json lists 37 things for the demo while the zip
+              carries 74, because the instrument files name samples of their own. The size
+              is known and is the number that matters. */}
           <Button variant="primary" size="lg" href={result.zipUrl} download>
-            Everything ({total} files{result.zipBytes ? `, ${formatBytes(result.zipBytes)}` : ""})
+            Everything{result.zipBytes ? ` (${formatBytes(result.zipBytes)})` : ""}
           </Button>
           <p class="xs dim">
             One zip: stems, MIDI, samples, instruments, loops and the DAW project.
@@ -38,7 +42,7 @@ export function Downloads({ result }: { result: JobResult }) {
           </p>
         </>
       ) : (
-        <p class="small dim">Pick what you need — these are files on this device, not a download.</p>
+        <BuildZipButton result={result} />
       )}
 
       {!hasMidiFiles && noteCount > 0 ? <MidiButton project={result.project} /> : null}
@@ -60,6 +64,71 @@ export function Downloads({ result }: { result: JobResult }) {
       ))}
     </Card>
   );
+}
+
+/**
+ * Zip everything here, for a bundle with no server behind it — a demo, a song kept on
+ * this device, or a run done in the browser.
+ */
+function BuildZipButton({ result }: { result: JobResult }) {
+  const [state, setState] = useState<{
+    kind: "idle" | "working" | "done";
+    url?: string;
+    done?: number;
+    total?: number;
+    files?: number;
+    bytes?: number;
+  }>({ kind: "idle" });
+
+  if (state.kind === "done" && state.url) {
+    return (
+      <>
+        <Button variant="primary" size="lg" href={state.url} download={zipName(result.project)}>
+          Save the zip ({state.files} files, {formatBytes(state.bytes || 0)})
+        </Button>
+        <p class="xs dim">Built here from the files already on this device.</p>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Button
+        variant="primary"
+        size="lg"
+        disabled={state.kind === "working"}
+        onClick={() => {
+          setState({ kind: "working", done: 0, total: 0 });
+          let files = 0;
+          void zipWholeBundle(result.project, result.source, (p) => {
+            files = p.total + 1; // +1 for project.json, added at the end
+            setState({ kind: "working", done: p.done, total: p.total });
+          })
+            .then((blob) =>
+              setState({ kind: "done", url: URL.createObjectURL(blob), files, bytes: blob.size }),
+            )
+            .catch((e) => {
+              setState({ kind: "idle" });
+              toast((e as Error).message, { tone: "error" });
+            });
+        }}
+      >
+        {state.kind === "working"
+          ? `Packing… ${state.done}${state.total ? ` of ${state.total}` : ""}`
+          : "Everything"}
+      </Button>
+      <p class="xs dim">
+        Packed in your browser — nothing is fetched from a server.
+      </p>
+    </>
+  );
+}
+
+function zipName(project: JobResult["project"]): string {
+  const base = (projectSignal.value?.song.source_file || project.song.source_file || "stemflipper")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^\w-]+/g, "-");
+  return `${base || "stemflipper"}.zip`;
 }
 
 /** Build the multitrack MIDI from the notes currently loaded. */

@@ -178,6 +178,27 @@ the (separate, private) audiosaw repo.
   now an optimisation for the four-stem version rather than the difference between the
   site working and not.
 
+- **2026-09-23 (Opus, reported by the user): "download the whole project just links as a
+  readme".** Three bugs behind one symptom, all in the Downloads panel.
+  1. The **"Project" group promised the whole arrangement and delivered a README.** Its
+     blurb was a constant, and `make_demo_fixture.mjs` deliberately drops the 2.3 MB
+     DAWproject — so the group kept saying "Open the whole arrangement in a DAW" over a
+     single `README.txt`. The blurb now follows what is actually in the group, and
+     `project.exports` keys are labelled ("What is in this bundle") rather than printed
+     raw as "readme".
+  2. **There was no download-everything at all without a server.** The big zip button
+     only appeared when the Space had built one, so the demo, a song kept on this device
+     and every in-browser run could only be taken file by file. `export/wholeBundle.ts`
+     now packs it locally with fflate, storing (not deflating) audio.
+  3. **The file count was wrong wherever it appeared.** `countFiles` only saw what
+     project.json lists — 37 for the demo, against **74** actually in the zip, because the
+     instrument files name samples of their own. That function existed only to produce
+     that label and is deleted; the server button shows the size it genuinely knows, and
+     the built zip reports its real contents once packed.
+
+  Guarded in the `demo` smoke scenario, which now builds the zip, walks its central
+  directory, and fails if `project.json` or the instrument samples are missing from it.
+
 ## V3 QUEUE
 
 - [x] **N1 — shell, router, job state machine, screens, mock backend, smoke scenarios.**

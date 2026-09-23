@@ -259,6 +259,40 @@ async function scenarioDemo(page) {
     downloads: document.querySelectorAll(".disclosure").length,
     ctx: window.__sf.session?.ctx?.state,
   }));
+
+  // A bundle with no server behind it must still be downloadable in one piece, and the
+  // zip has to contain the samples the instrument files name, not just what project.json
+  // lists.
+  await page.evaluate(() => {
+    [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Everything")?.click();
+  });
+  await page.waitForFunction(() => /Save the zip/.test(document.body.textContent), { timeout: 180_000 });
+  const zipped = await page.evaluate(async () => {
+    const a = [...document.querySelectorAll("a.btn")].find((x) => /Save the zip/.test(x.textContent));
+    const buf = new Uint8Array(await (await fetch(a.href)).arrayBuffer());
+    const dv = new DataView(buf.buffer);
+    let eocd = -1;
+    for (let i = buf.length - 22; i >= 0 && i > buf.length - 70000; i--) {
+      if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) return { error: "no central directory" };
+    const count = dv.getUint16(eocd + 10, true);
+    let off = dv.getUint32(eocd + 16, true);
+    const names = [];
+    for (let i = 0; i < count; i++) {
+      const n = dv.getUint16(off + 28, true);
+      names.push(new TextDecoder().decode(buf.subarray(off + 46, off + 46 + n)));
+      off += 46 + n + dv.getUint16(off + 30, true) + dv.getUint16(off + 32, true);
+    }
+    return { bytes: buf.length, magic: String.fromCharCode(buf[0], buf[1]), names, label: a.textContent.trim() };
+  });
+  note(`zip: ${zipped.bytes} bytes, ${zipped.names?.length} entries — ${zipped.label}`);
+  if (zipped.error) problems.push(`built zip is malformed: ${zipped.error}`);
+  if (zipped.magic !== "PK") problems.push("built zip has no PK header");
+  if (!zipped.names?.includes("project.json")) problems.push("built zip has no project.json");
+  if (!zipped.names?.some((n) => /instruments\/.*\/samples\//.test(n))) {
+    problems.push("built zip is missing the samples the instrument files name");
+  }
   note(`listen: route=${listen.route} stems=${listen.stems} downloadGroups=${listen.downloads} audioCtx=${listen.ctx}`);
   if (listen.route !== "listen") problems.push(`expected the listen route, got ${listen.route}`);
   if (listen.stems < 1) problems.push("no stems rendered");
