@@ -8,6 +8,7 @@ export function ShortcutSheet({ onClose }: { onClose: () => void }) {
         Drag a note to move it, drag its edges to change its length, and drag on empty space to
         select several.
       </p>
+      <div class="scroll-x">
       <table class="facts">
         <tbody>
           {SHORTCUTS.map((s) => (
@@ -25,6 +26,7 @@ export function ShortcutSheet({ onClose }: { onClose: () => void }) {
           ))}
         </tbody>
       </table>
+      </div>
     </Modal>
   );
 }

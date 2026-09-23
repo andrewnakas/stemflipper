@@ -32,6 +32,9 @@
 
 .grid-cards { display: grid; gap: var(--s4); grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
 .grid-2 { display: grid; gap: var(--s4); grid-template-columns: 1fr 1fr; }
+/* Grid and flex children are min-width:auto by default, so one long filename widens the
+   whole column past the viewport. Everything here should wrap or scroll instead. */
+.grid-cards > *, .grid-2 > *, .stack > * { min-width: 0; }
 
 @media (max-width: 640px) {
   .grid-2 { grid-template-columns: 1fr; }

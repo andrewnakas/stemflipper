@@ -74,3 +74,11 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--s5) 0; }
     transition-duration: 0.001ms !important;
   }
 }
+
+/**
+ * Wide content scrolls inside its own box rather than being clipped by the page.
+ * Tables of model names and shortcut keys are wider than a phone, and a clipped table is
+ * silently missing information.
+ */
+.scroll-x { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+.scroll-x > table { min-width: max-content; }

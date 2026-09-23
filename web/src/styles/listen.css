@@ -30,7 +30,7 @@
 .waveform { width: 100%; cursor: pointer; border-radius: 3px; }
 
 .filelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--t-sm); }
-.filelist a { display: inline-block; }
+.filelist a { display: inline-block; overflow-wrap: anywhere; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .chip {

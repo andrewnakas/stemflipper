@@ -29,17 +29,19 @@ export function SongFacts({ project }: { project: Project }) {
             ? ` · stems add back up to the original within ${project.separation.residual_db.toFixed(0)} dB`
             : ""}
         </p>
-        <table class="facts">
-          <tbody>
-            {project.separation.chain.map((c) => (
-              <tr key={c.step}>
-                <td>{c.step}</td>
-                <td class="dim xs">{c.model}</td>
-                <td class="dim xs tabular">{c.seconds}s</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div class="scroll-x">
+          <table class="facts">
+            <tbody>
+              {project.separation.chain.map((c) => (
+                <tr key={c.step}>
+                  <td>{c.step}</td>
+                  <td class="dim xs">{c.model}</td>
+                  <td class="dim xs tabular">{c.seconds}s</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         {notable.length ? (
           <ul class="small" style={{ marginTop: "var(--s3)", paddingLeft: "1.1em" }}>
             {notable.map((s) => (

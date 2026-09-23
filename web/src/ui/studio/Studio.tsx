@@ -229,7 +229,8 @@ function StageTrail() {
           preset {p.separation.preset} · {p.separation.gpu_seconds.toFixed(1)}s on {p.separation.device}
         </span>
       </div>
-      <table class="facts" style={{ marginTop: "var(--s2)" }}>
+      <div class="scroll-x" style={{ marginTop: "var(--s2)" }}>
+      <table class="facts">
         <tbody>
           {p.separation.chain.map((c) => (
             <tr key={c.step}>
@@ -240,6 +241,7 @@ function StageTrail() {
           ))}
         </tbody>
       </table>
+      </div>
       {notable.length > 0 && (
         <ul class="small" style={{ paddingLeft: "1.1em" }}>
           {notable.map((s) => (

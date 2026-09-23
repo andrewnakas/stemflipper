@@ -174,6 +174,7 @@ function FreeTier() {
         </p>
       </div>
       <Card flat>
+        <div class="scroll-x">
         <table class="quota-table">
           <thead>
             <tr>
@@ -195,6 +196,7 @@ function FreeTier() {
             ))}
           </tbody>
         </table>
+        </div>
         <p class="xs dim" style={{ marginTop: "var(--s3)" }}>
           A 3:30 song costs about {estimateGpuSeconds(TYPICAL_SONG_S, "balanced")} seconds of GPU
           on the Balanced setting. You are only charged for time actually used.
