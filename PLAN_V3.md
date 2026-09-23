@@ -1,5 +1,17 @@
 # StemFlipper next-gen — a consumer-grade site at audiosaw.com/stemflipper/
 
+> **STATUS (2026-09-23): executed, and extended.** This is the plan as approved; what
+> actually shipped is in `HANDOFF.md`, which is the source of truth. Every phase is done
+> except **N2 (Sign in with Hugging Face)**, which is built and unit-tested but needs an
+> OAuth client id only the account owner can create.
+>
+> **One thing here is now wrong by omission.** The plan assumed the Hugging Face Space was
+> the only way to process a song. It is not: the whole pipeline also runs **in the
+> browser** (`web/src/local/`) — separation and transcription, no account, no upload, no
+> daily limit. That was added after a real user hit the shared pool's *runs* limit, which
+> is a throttle this plan did not know existed. Read the v3 entries in `HANDOFF.md` for
+> what it does, what it cannot do, and why.
+
 ## Context
 
 StemFlipper v2 (repo `/Users/nakas/Documents/stemflipper`) is fully built and deployed: the
