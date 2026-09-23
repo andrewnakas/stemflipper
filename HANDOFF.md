@@ -98,7 +98,13 @@ the (separate, private) audiosaw repo.
       top of the notes. Export is a dialog now, which is what finally exposes
       `buildExportZip`'s per-track rendering — the thing a person most often wants out of
       an editor was unreachable.
-- [x] **N6a — the audiosaw mount.** PR open: andrewnakas/audiosaw#1. Adds
+- [x] **N6 — the audiosaw mount. MERGED and LIVE at https://audiosaw.com/stemflipper/.**
+      Verified in a browser from the real origin: `/stemflipper` 301s to `/stemflipper/`,
+      the demo plays, all six download groups render, zero console errors, and an unknown
+      path still 404s. Time-to-playable 6.9 s cold / **3.0 s** warm — the proxy's first
+      fetch of ~6 MB of stems is uncached, and `cf-cache-status: HIT` afterwards. That is
+      ~0.6 s of proxy hop over serving from Pages directly.
+      The PR added
       `functions/stemflipper/[[path]].js` (verified under `wrangler pages dev`: two real
       bugs found — a double-decoded gzip body, and `/stemflipper` without a trailing slash
       404ing every relative asset), `_routes.json`, the tool-graph entry and rail, the
@@ -146,10 +152,18 @@ the (separate, private) audiosaw repo.
       duration, so over-requesting refuses visitors who would in fact have fitted. One
       real full-length run on `balanced` and one on `best` would settle it.
 
-- [ ] **N7 — redeploy the Space.** `app.py::EDITOR_URL` now points at
-      `audiosaw.com/stemflipper/` but the live Space still serves the old link. Needs
-      `.venv/bin/hf auth login` then `.venv/bin/python scripts/deploy_space.py`. No local
-      `.venv` exists right now (`uv venv --python 3.10 .venv`).
+- [x] **N7 — Space redeployed 2026-09-23.** `EDITOR_URL` now points at
+      `audiosaw.com/stemflipper/`. Verified back up: stage RUNNING, `/flip` still
+      3 params / 4 returns (Invariant #11).
+      **`hf auth login` was never the blocker** — the `hf` CLI simply was not installed,
+      because the HANDOFF told everyone to run `.venv/bin/hf` and there is no `.venv`.
+      A token was already cached from an earlier session. The pipeline is NOT needed to
+      deploy: `scripts/deploy_space.py` imports nothing but `huggingface_hub`, so
+      ```
+      uv tool install huggingface_hub      # once; puts `hf` on PATH
+      uv run --with huggingface_hub python scripts/deploy_space.py [--dry-run]
+      ```
+      is the whole procedure. No torch, no 10-minute install.
 
 
 ---
