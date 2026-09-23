@@ -218,3 +218,9 @@ kbd {
 .where__head { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
 .where__lines { display: flex; flex-direction: column; gap: 3px; color: var(--text-dim); }
 @media (max-width: 640px) { .where { grid-template-columns: 1fr; } }
+
+/* ---- Score ---- */
+.score-sheet { overflow-x: auto; }
+/* VexFlow draws in black; on a dark page the stave has to be inverted to be legible. */
+.score-host { background: #fffdf8; border-radius: var(--r-sm); padding: var(--s2); min-height: 120px; }
+.score-host svg { display: block; }

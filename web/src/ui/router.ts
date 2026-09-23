@@ -9,9 +9,9 @@
 
 import { signal } from "@preact/signals";
 
-export type RouteName = "home" | "run" | "listen" | "studio";
+export type RouteName = "home" | "run" | "listen" | "studio" | "score";
 
-const ROUTES: RouteName[] = ["home", "run", "listen", "studio"];
+const ROUTES: RouteName[] = ["home", "run", "listen", "studio", "score"];
 
 export function parseHash(hash: string): RouteName {
   const name = hash.replace(/^#\/?/, "").split("?")[0].split("/")[0];

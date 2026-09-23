@@ -8,6 +8,7 @@ import { Landing } from "./landing/Landing";
 import { ListenScreen } from "./listen/ListenScreen";
 import { route } from "./router";
 import { RunScreen } from "./run/RunScreen";
+import { ScoreView } from "./score/ScoreView";
 import { Studio } from "./studio/Studio";
 
 export function App() {
@@ -22,6 +23,7 @@ export function App() {
       {where === "home" ? <Landing /> : null}
       {where === "run" ? <RunScreen /> : null}
       {where === "listen" ? <ListenScreen /> : null}
+      {where === "score" ? <ScoreView /> : null}
       {studio ? <Studio /> : null}
       <Toasts />
     </div>

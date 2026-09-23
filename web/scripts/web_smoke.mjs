@@ -309,6 +309,43 @@ async function scenarioDemo(page) {
   note(`play: clock ${played.t.toFixed(2)}s, ctx ${played.state}`);
   if (played.state === "running" && !(played.t > 0)) problems.push("pressing play did not advance the clock");
 
+  // Sheet music: the notation has to actually draw, for a pitched part and for drums.
+  await page.evaluate(() => {
+    [...document.querySelectorAll("button")].find((b) => /sheet music/i.test(b.textContent))?.click();
+  });
+  await page.waitForSelector(".score-host svg", { timeout: 30_000 });
+  const score = await page.evaluate(() => {
+    const svg = document.querySelector(".score-host svg");
+    return {
+      route: window.__sf.route,
+      height: Number(svg?.getAttribute("height") || 0),
+      paths: svg?.querySelectorAll("path").length || 0,
+      parts: [...document.querySelectorAll(".segmented__item")].map((b) => b.textContent.trim()),
+      badges: [...document.querySelectorAll(".badge")].map((b) => b.textContent.trim()),
+    };
+  });
+  note(`score: ${score.parts.join("/")} — ${score.badges.join(", ")} (${score.paths} glyphs)`);
+  if (score.route !== "score") problems.push("Sheet music did not open the score");
+  if (score.paths < 20) problems.push(`the score drew almost nothing (${score.paths} glyphs)`);
+  if (!score.badges.some((b) => /clef/.test(b))) problems.push("the score names no clef");
+
+  // A drum part must land on a percussion staff rather than being spelled as pitches.
+  const drums = await page.evaluate(() => {
+    const b = [...document.querySelectorAll(".segmented__item")].find((x) => /drum/i.test(x.textContent));
+    if (!b) return null;
+    b.click();
+    return true;
+  });
+  if (drums) {
+    await page.waitForFunction(() => /percussion clef/.test(document.body.textContent), { timeout: 20_000 })
+      .catch(() => problems.push("drums did not get a percussion clef"));
+  }
+
+  await page.evaluate(() => {
+    [...document.querySelectorAll("button")].find((b) => /← Listen/.test(b.textContent))?.click();
+  });
+  await page.waitForSelector(".stemrow", { timeout: 10_000 });
+
   await page.evaluate(() => {
     [...document.querySelectorAll("button")].find((b) => /open in studio/i.test(b.textContent))?.click();
   });

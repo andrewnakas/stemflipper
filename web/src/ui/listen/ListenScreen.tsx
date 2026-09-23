@@ -71,6 +71,7 @@ export function ListenScreen() {
           >
             Flip another
           </Button>
+          <Button onClick={() => navigate("score")}>Sheet music</Button>
           <Button variant="primary" onClick={() => navigate("studio")}>
             Open in Studio
           </Button>
@@ -78,7 +79,8 @@ export function ListenScreen() {
         <AttributionLine />
         <p class="small dim" style={{ marginBottom: "var(--s4)", marginTop: "var(--s2)" }}>
           Studio lets you edit the transcribed notes and blend the original stems against the
-          synth and sampler rebuilds.
+          synth and sampler rebuilds. Sheet music writes them out as notation and tab, and
+          exports MusicXML for MuseScore or Guitar Pro.
         </p>
 
         <div class="row wrap" style={{ gap: "var(--s2)", marginBottom: "var(--s3)" }}>

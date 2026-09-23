@@ -15,7 +15,8 @@
     "@preact/signals": "^2.0.0",
     "fflate": "^0.8.2",
     "onnxruntime-web": "^1.23.0",
-    "preact": "^10.24.0"
+    "preact": "^10.24.0",
+    "vexflow": "^5.0.0"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.9.0",
