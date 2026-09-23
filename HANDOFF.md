@@ -132,6 +132,11 @@ the (separate, private) audiosaw repo.
       Covered by a `keep` smoke scenario that keeps a song, does a **real page reload**,
       reopens it from IndexedDB and asserts the rendered audio is identical (rms 0.2196
       before and after), then drops a bundle zip built from the fixture.
+      A finished run is also offered back after a reload while the server still has it
+      (six hours), asserted by the `upload` scenario. There is deliberately no equivalent
+      for a run *in progress*: whether the Gradio queue replays a stream to a returning
+      `session_hash` is the one N0 question left unverified, and a "reconnect" that
+      silently did nothing would be worse than saying a reload loses the run.
 - [ ] **N7 — redeploy the Space.** `app.py::EDITOR_URL` now points at
       `audiosaw.com/stemflipper/` but the live Space still serves the old link. Needs
       `.venv/bin/hf auth login` then `.venv/bin/python scripts/deploy_space.py`. No local

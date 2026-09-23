@@ -342,6 +342,26 @@ async function scenarioUpload(page) {
   if (listen.route !== "listen") problems.push("a finished run should land on Listen");
   if (!listen.zip) problems.push("the bundle zip URL was dropped (this is the v2 bug)");
   if (!listen.bigButton) problems.push('no "Everything" download button');
+
+  // Reloading used to lose a finished run entirely, even though the bundle sits on the
+  // server for six hours. It should be offered back.
+  await page.goto(`${BASE}/`, { waitUntil: "networkidle0", timeout: 60_000 });
+  await page.waitForFunction("window.__sf && window.__sf.ready === true", { timeout: 30_000 });
+  const offered = await page.evaluate(() =>
+    [...document.querySelectorAll(".card--quiet")].map((c) => c.textContent.replace(/\s+/g, " ").trim()),
+  );
+  note(`after reload: ${offered.join(" | ") || "(nothing offered)"}`);
+  if (!offered.some((t) => /still on the server/i.test(t))) {
+    problems.push("a finished run was not offered again after a reload");
+    return;
+  }
+  await page.evaluate(() => {
+    [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Open")?.click();
+  });
+  await page.waitForSelector(".stemrow", { timeout: 30_000 });
+  const reopened = await page.evaluate(() => ({ route: window.__sf.route, stems: document.querySelectorAll(".stemrow").length }));
+  note(`reopened from the server: ${reopened.stems} stems`);
+  if (reopened.route !== "listen" || !reopened.stems) problems.push("reopening a server run after a reload failed");
 }
 
 async function scenarioQuota(page) {

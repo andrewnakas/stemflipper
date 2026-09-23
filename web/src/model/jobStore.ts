@@ -9,7 +9,7 @@ import { signal } from "@preact/signals";
 import { assetUrl, fetchJson, type AssetSource } from "../api/assets";
 import {
   cancelRun, fileUrl, joinQueue, sessionHash, streamResult, uploadFileWithProgress,
-  type BackendConfig, type FileRef,
+  type BackendConfig,
 } from "../api/backend";
 import { fetchSpaceStatus, isHostedSpace, wakePing, waitUntilAwake } from "../api/space";
 import { resumeAudio } from "../engine/context";
@@ -47,7 +47,13 @@ export interface Attribution {
 /** Set when the loaded project is a demo someone else made the music for. */
 export const attribution = signal<Attribution | null>(null);
 
-const RESUME_KEY = "sf.job";
+/**
+ * A FINISHED run, so a reload can offer it again while the server still has the bundle.
+ *
+ * There is deliberately no equivalent for a run in progress: whether the Gradio queue
+ * replays a stream to a returning session_hash is unverified, and offering a "reconnect"
+ * that silently does nothing would be worse than saying a reload loses the run.
+ */
 const RESULT_KEY = "sf.result";
 
 let controller: AbortController | null = null;
@@ -112,7 +118,6 @@ export function reset(): void {
   stopTicker();
   lastFile = null;
   currentSession = null;
-  sessionStorage.removeItem(RESUME_KEY);
   dispatch({ type: "reset" });
 }
 
@@ -177,7 +182,6 @@ export async function startJob(file: File): Promise<void> {
     const hash = sessionHash();
     const { event_id } = await joinQueue(cfg, ref, { preset, six }, hash, signal);
     currentSession = { hash, eventId: event_id, cfg };
-    rememberRun(hash, event_id, cfg, ref, preset, six);
 
     startTicker();
     const data = await streamResult(cfg, hash, () => undefined, 3, signal, (msg) =>
@@ -340,17 +344,8 @@ function releaseCurrentBlobSource(): void {
   blobSource = null;
 }
 
-function rememberRun(hash: string, eventId: string | null, cfg: BackendConfig, ref: FileRef, preset: Preset, six: boolean): void {
-  try {
-    sessionStorage.setItem(RESUME_KEY, JSON.stringify({ hash, eventId, baseUrl: cfg.baseUrl, ref, preset, six, at: Date.now() }));
-  } catch {
-    /* ignore */
-  }
-}
-
 function rememberResult(result: JobResult, cfg: BackendConfig): void {
   try {
-    sessionStorage.removeItem(RESUME_KEY);
     sessionStorage.setItem(
       RESULT_KEY,
       JSON.stringify({
