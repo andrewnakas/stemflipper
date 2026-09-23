@@ -48,8 +48,8 @@ export function Landing() {
       <section class="hero container container--narrow">
         <h1 class="hero__title">Turn any song into stems, MIDI and playable instruments.</h1>
         <p class="hero__sub">
-          Drop a track. It comes back split into vocals, drums, bass and the rest — each one
-          transcribed to MIDI and cut into samples you can load in a DAW.
+          Drop a track. It comes back split into stems and transcribed to MIDI — on this
+          device if you like, with nothing uploaded and no limit.
         </p>
         <DropZone onFile={take} disabled={job.value.kind === "uploading"} />
         <div class="hero__actions">
@@ -74,8 +74,9 @@ export function Landing() {
         <div class="grid-cards">
           <Card title="Stems">
             <p class="card__body small">
-              Vocals, drums, bass and everything else as 24-bit FLAC — and the drum kit split
-              again into kick, snare, toms, hi-hat, ride and crash.
+              Vocals and instrumental in your browser; or vocals, drums, bass and the rest on
+              the server, with the drum kit split again into kick, snare, toms, hi-hat, ride
+              and crash.
             </p>
           </Card>
           <Card title="MIDI">
@@ -87,13 +88,14 @@ export function Landing() {
           <Card title="Instruments">
             <p class="card__body small">
               A drum kit and multisampled instruments built from this song's own audio, as SFZ,
-              DecentSampler and Vital presets.
+              DecentSampler and Vital presets. Server only — cutting samples needs the
+              four-stem split.
             </p>
           </Card>
           <Card title="Loops and phrases">
             <p class="card__body small">
               Bar-aligned loops cut at real downbeats and named with tempo and key, plus vocal
-              chops bounded by silence.
+              chops bounded by silence. Server only.
             </p>
           </Card>
         </div>
@@ -107,8 +109,9 @@ export function Landing() {
           <div class="howto__item">
             <b>Separate</b>
             <p class="small dim">
-              A vocal model first, then a stem model on what is left, then the drum kit into its
-              own pieces. Splitting the kit is what makes the drum transcription accurate.
+              A neural model pulls the vocal out, and on the server a second one splits what is
+              left into drums, bass and the rest — then the kit into its own pieces, which is
+              what makes the drum transcription accurate.
             </p>
           </div>
           <div class="howto__item">
@@ -121,16 +124,21 @@ export function Landing() {
           <div class="howto__item">
             <b>Rebuild</b>
             <p class="small dim">
-              Samples are cut from the stems and mapped into instruments, so the reconstruction
-              plays back with this song's own sounds. Then you can edit the notes.
+              On the server, samples are cut from the stems and mapped into instruments, so the
+              reconstruction plays with this song's own sounds. Either way you can edit the
+              notes and export.
             </p>
           </div>
         </div>
         <div style={{ marginTop: "var(--s5)" }}>
-          <Notice tone="info" title="This one uploads your song">
-            Every other tool on AudioSaw runs entirely in your browser. This one cannot: the
-            separation models need a GPU. Your file is processed on a Hugging Face Space and
-            deleted within {6} hours. Playback, editing and exporting all happen on your device.
+          <Notice tone="info" title="You choose where it runs">
+            <b>In your browser</b> — vocals and instrumental, each transcribed to MIDI. Nothing
+            is uploaded, there is no limit, and it needs no account. Fast when your browser can
+            use your graphics card.
+            <br />
+            <b>On the server</b> — four stems, the drum kit split into its pieces, plus samples,
+            instruments and loops. Your song is uploaded to a Hugging Face Space and deleted
+            within 6 hours, and the free GPU time is rationed per day.
           </Notice>
         </div>
       </section>
@@ -167,11 +175,11 @@ function FreeTier() {
   return (
     <section class="section container container--narrow">
       <div class="section__head">
-        <h2>Free, with a daily limit</h2>
+        <h2>The server's daily limit</h2>
         <p class="small dim" style={{ marginTop: "var(--s2)" }}>
-          The GPU is Hugging Face's, and it is free — but the time is rationed per person per
-          day. Signing in spends your own allowance instead of the shared one, which is why
-          everyone gets more.
+          Running in your browser has no limit at all. The four-stem version uses Hugging
+          Face's free GPU, and that time is rationed per person per day — signing in spends
+          your own allowance instead of the shared one, which is why everyone gets more.
         </p>
       </div>
       <Card flat>
