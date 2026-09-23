@@ -140,8 +140,16 @@ the (separate, private) audiosaw repo.
   file never used, since `wasmPaths` points at a CDN. The worker uses `importScripts`
   (`worker: { format: "iife" }`) and the worker chunk is 11.8 kB.
 
-  **Follow-up:** add COOP/COEP to the audiosaw proxy for `/stemflipper` so machines
-  without WebGPU get threads (10x instead of 31x). Needs a second PR on that repo.
+  **Verified on the LIVE site** (audiosaw.com/stemflipper/): 59 s for an 8-second clip
+  including the model download over the internet, WebGPU, 43 notes, audible render, valid
+  MIDI — with nothing uploaded.
+
+  **COOP/COEP for the threaded path was considered and deliberately NOT done.** It would
+  take a machine without WebGPU from 31x realtime to 10x — 108 minutes to 35 for a 3:30
+  song, so still unusable — and it costs either 33 MB of onnxruntime wasm committed here
+  or a version-coupling to audiosaw's vendored copy that would break silently when either
+  side upgrades. WebGPU is the path that actually works and it is in every current
+  browser; without it the run screen recommends the server instead.
 
 ## V3 QUEUE
 
