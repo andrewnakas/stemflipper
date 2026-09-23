@@ -5,7 +5,8 @@
  *   fixture  load a bundle, play it, edit a note, export — the deep checks
  *   demo     the front door: landing -> Hear an example -> Listen -> Studio
  *   upload   drop a file and watch a whole run against scripts/mock_backend.mjs
- *   quota    the run fails on ZeroGPU quota and offers a way out
+ *   quota    the run fails on a ZeroGPU seconds limit and offers a cheaper preset
+ *   runs     the run fails on a ZeroGPU *runs* limit and offers a token instead
  *   keep     keep a song in the browser, reload, reopen it and hear it
  *
  * The upload and quota scenarios need the mock backend running:
@@ -364,6 +365,38 @@ async function scenarioUpload(page) {
   if (reopened.route !== "listen" || !reopened.stems) problems.push("reopening a server run after a reload failed");
 }
 
+async function scenarioRuns(page) {
+  const final = await runUpload(page, { expectError: true });
+  if (!final) return;
+  const e = final.job.error;
+  note(`error: code=${e?.code} recovery=${(e?.recovery || []).join(",")}`);
+  if (e?.code !== "quota_runs") {
+    problems.push(`a runs limit was classified as "${e?.code}"`);
+    return;
+  }
+  // A cheaper preset cannot buy more runs, so offering it would be useless advice.
+  if (e.recovery.includes("use_fast")) problems.push("a runs limit should not suggest a cheaper preset");
+  if (!e.recovery.includes("paste_token")) problems.push("a runs limit should offer a token");
+
+  const panel = await page.evaluate(() => ({
+    title: document.querySelector(".notice__title")?.textContent || "",
+    actions: [...document.querySelectorAll(".notice__actions button, .notice__actions a")].map((b) => b.textContent.trim()),
+    tokenFieldPresent: !!document.querySelector('input[type="password"]'),
+  }));
+  note(`panel: "${panel.title}" | ${panel.actions.join(" | ")}`);
+  if (/GPU time/i.test(panel.title)) problems.push("a runs limit is described as running out of time");
+  if (!panel.tokenFieldPresent) problems.push("the token field is not on the screen that recommends it");
+
+  // The recommended fix must actually be reachable from the panel.
+  await page.evaluate(() => {
+    [...document.querySelectorAll("button")].find((b) => /hugging face token/i.test(b.textContent))?.click();
+  });
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute("type") === "password",
+    { timeout: 5000 },
+  ).catch(() => problems.push("the token button did not open and focus the field"));
+}
+
 async function scenarioQuota(page) {
   const final = await runUpload(page, { expectError: true });
   if (!final) return;
@@ -481,6 +514,7 @@ const SCENARIOS = {
   demo: scenarioDemo,
   upload: scenarioUpload,
   quota: scenarioQuota,
+  runs: scenarioRuns,
   keep: scenarioKeep,
 };
 

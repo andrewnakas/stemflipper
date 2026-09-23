@@ -6,7 +6,7 @@
  * That makes the one path CI could never cover — drop a file, watch it run, land on the
  * result — an ordinary test.
  *
- *   node scripts/mock_backend.mjs [--port 7861] [--mode ok|quota|sleeping|drop|slow]
+ *   node scripts/mock_backend.mjs [--port 7861] [--mode ok|quota|runs|sleeping|drop|slow]
  */
 
 import { createServer } from "node:http";
@@ -48,6 +48,10 @@ const MIME = {
 
 const QUOTA_ERROR =
   "You have exceeded your GPU quota (59s left vs. 60s requested). Sign-up on Hugging Face to get more quotas or retry in 2:13:40";
+
+/** The other throttle, seen on a real upload: jobs per day, with no seconds in it. */
+const RUNS_ERROR =
+  "You have exceeded your ZeroGPU runs limit. Authenticate with a Hugging Face token for more quota - https://huggingface.co/settings/tokens";
 
 function cors(res) {
   res.setHeader("access-control-allow-origin", "*");
@@ -144,10 +148,10 @@ const server = createServer(async (req, res) => {
     });
     const send = (msg) => res.write(`data: ${JSON.stringify(msg)}\n\n`);
 
-    if (MODE === "quota") {
+    if (MODE === "quota" || MODE === "runs") {
       setTimeout(() => {
         send({ msg: "process_starts", event_id: "mock-event-1" });
-        send(failedFrame("mock-event-1", QUOTA_ERROR));
+        send(failedFrame("mock-event-1", MODE === "runs" ? RUNS_ERROR : QUOTA_ERROR));
         res.end();
       }, 50);
       return;

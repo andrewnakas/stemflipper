@@ -14,10 +14,12 @@ import { formatWait } from "../../model/quota";
 import { Button } from "../components/primitives";
 import { Disclosure } from "../components/Disclosure";
 import { Notice } from "../components/Notice";
+import { wantToken } from "./AdvancedPanel";
 import { navigate } from "../router";
 
 const TITLES: Partial<Record<JobError["code"], string>> = {
   quota: "You are out of free GPU time for today",
+  quota_runs: "You are out of free runs for today",
   rate_limited: "The server is busy",
   too_long: "That song is too long",
   too_big: "That file is too big",
@@ -52,6 +54,13 @@ export function ErrorPanel({ error }: { error: JobError }) {
       ))}
     >
       <p>{error.message}</p>
+      {error.code === "quota_runs" ? (
+        <p style={{ marginTop: "var(--s2)" }}>
+          The shared pool limits how many songs everyone can run per day, not just how much
+          GPU time. Your own allowance resets 24 hours after your first run, and a Hugging
+          Face token gives you one of your own straight away — a free account is enough.
+        </p>
+      ) : null}
       {error.code === "quota" && error.leftS != null && error.requestedS != null ? (
         <p style={{ marginTop: "var(--s2)" }}>
           This run needed {error.requestedS} seconds and you have {error.leftS} left.
@@ -125,7 +134,13 @@ function RecoveryButton({ what, error, remaining }: { what: Recovery; error: Job
         </Button>
       );
     case "paste_token":
-      return null; // lives in the Advanced panel on the run screen
+      // The server itself says a token is the fix, so make the field reachable from here
+      // rather than leaving it buried under a disclosure the visitor has no reason to open.
+      return (
+        <Button variant={isConfigured() ? "default" : "primary"} onClick={() => (wantToken.value = true)}>
+          Use a Hugging Face token
+        </Button>
+      );
     default:
       void error;
       return null;

@@ -83,6 +83,24 @@ the (separate, private) audiosaw repo.
   **Mobile:** checked at 375 px. Grid children were `min-width: auto`, so one long sample
   filename widened its column past the viewport; wide tables now scroll inside their own box.
 
+- **2026-09-23 (Opus, a real user's quota failure):** A `charli.mp3` upload hit a
+  **second, undocumented ZeroGPU throttle** that no amount of reading the docs would have
+  found: *"You have exceeded your ZeroGPU runs limit. Authenticate with a Hugging Face
+  token for more quota"*. It counts **jobs, not seconds**, and carries no numbers at all.
+  The generic handler caught it, but every word of the resulting panel was wrong:
+  it said "out of free GPU time", and it offered "Try again on Fast" — useless advice,
+  since a shorter job is still a job. Worse, the one remedy the server itself named was
+  the only recovery the UI could not perform: `paste_token` rendered `null`, with a
+  comment claiming the field "lives in the Advanced panel" — which is not shown on the
+  error screen at all.
+  Now a distinct `quota_runs` code with copy that says runs, a primary **"Use a Hugging
+  Face token"** button, and the Advanced panel rendered beneath any quota/auth failure so
+  the field is on the screen that recommends it. A `runs` smoke scenario covers the
+  classification, asserts a cheaper preset is *not* suggested, and clicks the button to
+  prove it opens and focuses the field.
+  **Lesson: the recovery actions in a JobError are a promise. One that renders nothing is
+  worse than not offering it** — the panel looked complete while being a dead end.
+
 ## V3 QUEUE
 
 - [x] **N1 — shell, router, job state machine, screens, mock backend, smoke scenarios.**

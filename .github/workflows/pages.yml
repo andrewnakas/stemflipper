@@ -48,11 +48,13 @@ jobs:
           npx wait-on http://localhost:4173/stemflipper/ --timeout 60000
           node scripts/mock_backend.mjs --port 7861 &
           node scripts/mock_backend.mjs --port 7862 --mode quota &
-          npx wait-on http://localhost:7861 http://localhost:7862 --timeout 30000
+          node scripts/mock_backend.mjs --port 7863 --mode runs &
+          npx wait-on http://localhost:7861 http://localhost:7862 http://localhost:7863 --timeout 30000
           node scripts/web_smoke.mjs --scenario fixture
           node scripts/web_smoke.mjs --scenario demo
           node scripts/web_smoke.mjs --scenario upload --backend http://localhost:7861
           node scripts/web_smoke.mjs --scenario quota   --backend http://localhost:7862
+          node scripts/web_smoke.mjs --scenario runs    --backend http://localhost:7863
           node scripts/web_smoke.mjs --scenario keep    --fixture demo
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

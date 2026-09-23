@@ -38,6 +38,7 @@ export const STEP_BOUNDS: Record<Step, [number, number]> = {
 
 export type ErrorCode =
   | "quota"
+  | "quota_runs"
   | "rate_limited"
   | "too_long"
   | "too_big"
@@ -304,6 +305,22 @@ export function isJobError(e: unknown): e is JobError {
 export function classifyError(raw: unknown): JobError {
   const text = typeof raw === "string" ? raw : (raw as Error)?.message || String(raw);
   const t = text.toLowerCase();
+
+  // Two different throttles, and they need different advice.
+  //
+  // A RUNS limit counts jobs, not seconds, and arrived with no numbers at all:
+  //   "You have exceeded your ZeroGPU runs limit. Authenticate with a Hugging Face token
+  //    for more quota - https://huggingface.co/settings/tokens"
+  // Telling someone to retry on a cheaper preset here would be useless — a shorter job is
+  // still a job. The server names the one thing that does work, so offer that.
+  if (t.includes("runs limit") || (t.includes("exceeded") && t.includes("runs"))) {
+    return {
+      code: "quota_runs",
+      message: "You have used all of today's free runs on the shared pool.",
+      detail: text,
+      recovery: ["paste_token", "sign_in", "wait", "demo"],
+    };
+  }
 
   if (t.includes("gpu quota") || t.includes("gpu task aborted") || t.includes("exceeded your")) {
     // "(59s left vs. 60s requested)" and "(60s requested vs. 59s left)" both occur.

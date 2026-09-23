@@ -80,8 +80,14 @@ export function RunScreen() {
         ) : null}
 
         {phase.kind === "error" ? (
-          <div style={{ marginTop: "var(--s4)" }}>
+          <div class="stack" style={{ marginTop: "var(--s4)", gap: "var(--s3)" }}>
             <ErrorPanel error={phase.error} />
+            {/* The token field has to be reachable from the failure that recommends it. */}
+            {["quota", "quota_runs", "auth"].includes(phase.error.code) ? (
+              <div class="card">
+                <AdvancedPanel />
+              </div>
+            ) : null}
           </div>
         ) : null}
 

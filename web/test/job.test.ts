@@ -142,6 +142,28 @@ describe("classifyError", () => {
     expect(e.recovery).not.toContain("sign_in");
   });
 
+  it("tells a runs limit apart from a time limit", () => {
+    // Verbatim from a real upload: it counts JOBS, carries no seconds at all, and names
+    // the one remedy that works. Offering a cheaper preset here would be useless advice —
+    // a shorter job is still a job.
+    const e = classifyError(
+      "You have exceeded your ZeroGPU runs limit. Authenticate with a Hugging Face token for more quota - https://huggingface.co/settings/tokens",
+    );
+    expect(e.code).toBe("quota_runs");
+    expect(e.recovery).toContain("paste_token");
+    expect(e.recovery).toContain("sign_in");
+    expect(e.recovery).not.toContain("use_fast");
+    expect(e.message).toMatch(/runs/i);
+    expect(e.message).not.toMatch(/GPU time/i);
+    expect(e.leftS).toBeUndefined();
+  });
+
+  it("still treats a seconds-based refusal as one, and does offer a cheaper preset", () => {
+    const e = classifyError("You have exceeded your GPU quota (59s left vs. 60s requested). Please retry in 0:00:56");
+    expect(e.code).toBe("quota");
+    expect(e.recovery).toContain("use_fast");
+  });
+
   it("recognises a token that was rejected", () => {
     expect(classifyError("Falling back to IP-based quotas (InvalidRepoToken)").code).toBe("auth");
   });
