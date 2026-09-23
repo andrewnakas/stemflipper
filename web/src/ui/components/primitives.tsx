@@ -5,7 +5,7 @@ import type { ComponentChildren, JSX } from "preact";
 type Variant = "default" | "primary" | "ghost" | "danger";
 type Size = "sm" | "md" | "lg" | "icon";
 
-interface ButtonProps extends Omit<JSX.HTMLAttributes<HTMLButtonElement>, "size"> {
+interface ButtonProps extends Omit<JSX.IntrinsicElements["button"], "size" | "ref"> {
   variant?: Variant;
   size?: Size;
   on?: boolean;
@@ -48,9 +48,12 @@ export function Button({ variant, size, on, block, href, children, ...rest }: Bu
   );
 }
 
-export function Card(props: { title?: ComponentChildren; quiet?: boolean; flat?: boolean; class?: string; children: ComponentChildren }) {
+export function Card(props: { title?: ComponentChildren; quiet?: boolean; flat?: boolean; class?: string; style?: JSX.CSSProperties; children: ComponentChildren }) {
   return (
-    <div class={["card", props.quiet ? "card--quiet" : "", props.flat ? "card--flat" : "", props.class || ""].filter(Boolean).join(" ")}>
+    <div
+      class={["card", props.quiet ? "card--quiet" : "", props.flat ? "card--flat" : "", props.class || ""].filter(Boolean).join(" ")}
+      style={props.style}
+    >
       {props.title ? <div class="card__title">{props.title}</div> : null}
       {props.children}
     </div>

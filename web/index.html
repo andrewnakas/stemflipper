@@ -3,14 +3,35 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" type="image/svg+xml" href="/stemflipper/favicon.svg" />
-    <title>StemFlipper</title>
-    <meta http-equiv="refresh" content="0; url=./app.html" />
-    <link rel="canonical" href="https://andrewnakas.github.io/stemflipper/app.html" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <title>StemFlipper — stems, MIDI and playable instruments from any song</title>
+    <meta
+      name="description"
+      content="Drop a song and get it back split into stems, transcribed to MIDI, and cut into samples and instruments you can load in a DAW. Free, by AudioSaw."
+    />
+    <link rel="canonical" href="https://audiosaw.com/stemflipper/" />
+    <meta name="theme-color" content="#fbf6ed" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#16130f" media="(prefers-color-scheme: dark)" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="AudioSaw" />
+    <meta property="og:title" content="StemFlipper — stems, MIDI and playable instruments from any song" />
+    <meta
+      property="og:description"
+      content="Drop a song and get it back split into stems, transcribed to MIDI, and cut into samples you can load in a DAW."
+    />
+    <meta property="og:url" content="https://audiosaw.com/stemflipper/" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
-    <p style="font: 14px system-ui; padding: 24px">
-      Loading the StemFlipper editor… <a href="./app.html">continue</a>
-    </p>
+    <div id="app"></div>
+    <noscript>
+      <p style="font: 16px system-ui; padding: 24px; max-width: 40em">
+        StemFlipper separates a song into stems and transcribes them to MIDI. It needs JavaScript
+        to play audio in your browser. <a href="https://audiosaw.com/">AudioSaw</a> has other audio
+        tools.
+      </p>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

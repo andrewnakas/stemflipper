@@ -158,3 +158,49 @@ kbd {
   border: 2px solid var(--line); border-top-color: var(--accent);
   animation: spin 0.8s linear infinite;
 }
+
+/* ---- DropZone ---- */
+.dropzone {
+  display: flex; flex-direction: column; align-items: center; gap: var(--s2);
+  border: 2px dashed var(--line); border-radius: var(--r-lg);
+  background: var(--surface); color: var(--text-soft);
+  padding: var(--s7) var(--s4); text-align: center; cursor: pointer; width: 100%;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.dropzone:hover, .dropzone:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone--hot { border-color: var(--accent); background: var(--accent-soft); border-style: solid; }
+.dropzone__big { font-family: var(--serif); font-size: var(--t-xl); color: var(--text); font-weight: 600; }
+.dropzone__hint { font-size: var(--t-sm); color: var(--text-dim); }
+
+/* A full-page drop target while a file is over the window. */
+.dropveil {
+  position: fixed; inset: 0; z-index: 80;
+  background: color-mix(in srgb, var(--accent-soft) 88%, transparent);
+  border: 3px dashed var(--accent);
+  display: grid; place-items: center;
+  font-family: var(--serif); font-size: var(--t-2xl); color: var(--accent);
+}
+
+/* ---- Hero ---- */
+.hero { padding: var(--s8) 0 var(--s6); text-align: center; }
+.hero__title { max-width: 18ch; margin: 0 auto var(--s3); }
+.hero__sub { max-width: 58ch; margin: 0 auto var(--s5); color: var(--text-soft); font-size: var(--t-lg); }
+.hero__actions { display: flex; gap: var(--s3); justify-content: center; flex-wrap: wrap; margin-top: var(--s4); }
+
+/* ---- Step list on the landing ---- */
+.howto { counter-reset: step; display: grid; gap: var(--s4); grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.howto__item { position: relative; padding-left: var(--s6); }
+.howto__item::before {
+  counter-increment: step; content: counter(step);
+  position: absolute; left: 0; top: 0;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--accent-soft); color: var(--accent);
+  display: grid; place-items: center; font-weight: 700; font-size: var(--t-sm);
+}
+
+/* ---- Quota table ---- */
+.quota-table { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
+.quota-table th, .quota-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.quota-table th { color: var(--text-dim); font-weight: 600; }
+.quota-table tr:last-child td { border-bottom: 0; }
+.quota-table .is-you { background: var(--accent-soft); }

@@ -102,6 +102,15 @@ export function retry(): void {
   if (lastFile) void startJob(lastFile);
 }
 
+/** Start the file the visitor already chose. Must be called from their click. */
+export function startPending(): void {
+  if (lastFile) void startJob(lastFile);
+}
+
+export function hasPendingFile(): boolean {
+  return lastFile !== null;
+}
+
 function startTicker(): void {
   stopTicker();
   ticker = window.setInterval(() => dispatch({ type: "tick", now: Date.now() }), 250);

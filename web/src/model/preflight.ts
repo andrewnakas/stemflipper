@@ -28,10 +28,9 @@ export function validateMeta(meta: FileMeta): JobError | null {
   }
   if (meta.bytes > LIMITS.maxBytes) {
     const mb = (meta.bytes / 1e6).toFixed(0);
-    const cap = (LIMITS.maxBytes / 1e6).toFixed(0);
     return {
       code: "too_big",
-      message: `That file is ${mb} MB and the upload limit is ${cap} MB.`,
+      message: `That file is ${mb} MB and the upload limit is ${LIMITS.maxBytesLabel}.`,
       recovery: ["compress", "trim", "pick_another"],
     };
   }

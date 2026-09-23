@@ -1,10 +1,13 @@
 import { render } from "preact";
-import { fetchJson } from "./api/assets";
-import { App, openProject } from "./ui/App";
+import { restoreAuth } from "./model/auth";
+import { job, jobLog, openBundle, openFixture } from "./model/jobStore";
+import { session } from "./model/playback";
 import {
   assetSource, commitEdit, mixer, notesByTrack, project, redo, status, undo, updateMixer,
 } from "./model/store";
-import type { Project } from "./model/types";
+import { App } from "./ui/App";
+import { navigate, param, route } from "./ui/router";
+import { toast } from "./ui/components/Toast";
 import "./ui/theme.css";
 
 const root = document.getElementById("app")!;
@@ -14,6 +17,16 @@ render(<App />, root);
 (window as any).__sf = {
   ready: false,
   session: null as unknown,
+  get route() {
+    return route.value;
+  },
+  get job() {
+    return job.value;
+  },
+  get jobLog() {
+    return jobLog.value;
+  },
+  navigate,
   get state() {
     return {
       project: project.value,
@@ -23,14 +36,12 @@ render(<App />, root);
     };
   },
   async renderMix(opts?: { to?: number }) {
-    const { renderMix } = await import("./engine/render");
-    const { bufferRms, bufferPeak } = await import("./engine/render");
+    const { renderMix, bufferRms, bufferPeak } = await import("./engine/render");
     const buf = await renderMix(project.value!, assetSource.value!, mixer.value!, notesByTrack.value, {
       to: opts?.to ?? Math.min(4, project.value!.song.duration),
     });
     return { rms: bufferRms(buf), peak: bufferPeak(buf), duration: buf.duration };
   },
-  /** Drive the mixer from a test: __sf.setLane("bass", "synth", 1). */
   /** Move the first note of a track, as a drag would: __sf.editFirstNote("bass", 0.25). */
   async editFirstNote(trackId: string, deltaTime = 0.25, deltaPitch = 2) {
     const { moveNotes } = await import("./model/notes");
@@ -76,31 +87,33 @@ render(<App />, root);
     updateMixer((s) => {
       if (s.lanes[trackId]) s.lanes[trackId][lane] = value;
     });
-    const session = (window as any).__sf.session;
-    if (session && mixer.value) session.applyMixer(mixer.value);
+    if (mixer.value) session.value?.applyMixer(mixer.value);
     return mixer.value?.lanes[trackId];
   },
 };
 
 async function boot() {
-  const params = new URLSearchParams(location.search);
-  const fixture = params.get("fixture");
-  const bundle = params.get("bundle");
+  try {
+    await restoreAuth();
+  } catch {
+    /* anonymous still works */
+  }
+
+  const fixture = param("fixture");
+  const bundle = param("bundle");
   try {
     if (fixture) {
-      const base = `${import.meta.env.BASE_URL}fixtures/${fixture}`.replace(/\/+$/, "");
-      const data = await fetchJson<Project>(`${base}/project.json`);
-      await openProject(data, { kind: "static", baseUrl: base });
+      await openFixture(fixture);
     } else if (bundle) {
-      status.value = { text: "Loading the bundle from the backend…" };
-      const { backend } = await import("./model/store");
-      const { assetUrl } = await import("./api/assets");
-      const source = { kind: "server" as const, backend: backend.value, bundleRoot: bundle };
-      const data = await fetchJson<Project>(assetUrl(source, "project.json"));
-      await openProject(data, source);
+      await openBundle(bundle);
+    } else if (location.hash && location.hash !== "#/" && !project.value) {
+      // A deep link to a screen with nothing loaded: start at the front door.
+      navigate("home", { replace: true });
     }
   } catch (e) {
     status.value = { text: `Could not load: ${(e as Error).message}`, error: true };
+    toast(`Could not load that project: ${(e as Error).message}`, { tone: "error" });
+    navigate("home", { replace: true });
   } finally {
     (window as any).__sf.ready = true;
   }

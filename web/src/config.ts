@@ -17,7 +17,9 @@ export const HF_SCOPES = "openid profile";
 /** Server-side limits, mirrored so the browser can refuse a file before uploading it. */
 export const LIMITS = {
   maxMinutes: 8, // app.py MAX_AUDIO_MINUTES
-  maxBytes: 40 * 1024 * 1024, // demo.launch(max_file_size="40mb")
+  maxBytes: 40 * 1024 * 1024, // demo.launch(max_file_size="40mb") -> 41943040 bytes
+  /** What to call that in writing. The byte figure rounds to 42 MB, which reads as a typo. */
+  maxBytesLabel: "40 MB",
   extensions: [".wav", ".mp3", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".aiff", ".aif", ".wma", ".mp4", ".mov"],
 };
 
@@ -46,5 +48,8 @@ export const AUDIOSAW = {
   compress: "https://audiosaw.com/audio-compressor",
   convert: "https://audiosaw.com/tools",
 };
+
+/** The fixture behind "Hear an example". Swapped to the real CC-licensed song in N3. */
+export const DEMO_FIXTURE = "ci";
 
 export const CANONICAL_URL = "https://audiosaw.com/stemflipper/";

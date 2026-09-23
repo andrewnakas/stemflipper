@@ -1,0 +1,51 @@
+/** The Listen screen: transport, stem strips, download lists. */
+
+.transport {
+  display: flex; align-items: center; gap: var(--s3);
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-md); padding: var(--s2) var(--s3);
+  position: sticky; top: var(--s2); z-index: 5; box-shadow: var(--shadow-sm);
+}
+.transport__clock { font-family: var(--mono); font-size: var(--t-sm); min-width: 46px; }
+.transport__scrub { flex: 1; min-width: 0; }
+
+.stems { display: flex; flex-direction: column; gap: var(--s2); }
+
+.stemrow {
+  display: grid;
+  grid-template-columns: 1fr 110px;
+  grid-template-areas: "head fader" "wave fader";
+  gap: var(--s1) var(--s3);
+  align-items: center;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-md); padding: var(--s3);
+  transition: opacity 0.15s ease;
+}
+.stemrow--quiet { opacity: 0.45; }
+.stemrow__head { grid-area: head; display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.stemrow__wave { grid-area: wave; min-width: 0; }
+.stemrow__fader { grid-area: fader; display: flex; align-items: center; }
+.stemrow__fader input { width: 100%; }
+
+.waveform { width: 100%; cursor: pointer; border-radius: 3px; }
+
+.filelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--t-sm); }
+.filelist a { display: inline-block; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip {
+  font-size: var(--t-xs); font-family: var(--mono);
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 4px; padding: 1px 6px; color: var(--text-soft);
+}
+.chip--more { border-style: dashed; }
+
+.facts { border-collapse: collapse; width: 100%; margin-top: var(--s2); }
+.facts td { padding: 3px 6px; border-bottom: 1px solid var(--line-soft); }
+.facts tr:last-child td { border-bottom: 0; }
+
+@media (max-width: 640px) {
+  .stemrow { grid-template-columns: 1fr; grid-template-areas: "head" "wave" "fader"; }
+  .stemrow__fader { width: 100%; }
+  .transport { position: static; }
+}
