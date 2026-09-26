@@ -26,47 +26,183 @@ the (separate, private) audiosaw repo.
 
 ## V3 STATUS
 
-### NEXT UP (agreed with the user 2026-09-23) — WebGPU parity: close the stem gap
+### DONE (2026-09-24) — the synth, sampler and MIDI playback were glitchy; nine bugs
 
-The in-browser path should get as good as the cloud GPU, and the specific thing standing
-in the way is **two stems versus four**. Do this before picking up anything else.
+Reported as "the sampler synth stuff and midi is glitchy". It was not one thing. Every finding
+below was measured rather than guessed: `test/fakeAudio.ts` records the automation the lanes
+schedule so a test can walk a gain curve and find discontinuities, which is what a click *is*.
 
-**The comment at `web/src/local/pipeline.ts:8` is now out of date.** It says the
-four-stem models that would fit in a browser "do not exist yet — Demucs' ONNX export is
-158 MB and onnxruntime-web cannot load it". True when written, not any more. Checked on
-2026-09-23:
+**1. Every synth note popped at its note-off — and so did every export.** `stop()` released from
+`amp.gain.value`, but `.value` is the value NOW and notes are scheduled ahead of the clock, so it
+read the GainNode's default **1.0** and jumped the envelope to full scale before ramping down. A
+velocity-100 note sat at 0.31 and jumped to 1.0: a **3.2x step**, on every note, in playback and
+in rendered audio alike. Fixed by scheduling the whole ADSR at note-on, where `until` is already
+known, computing the value at each boundary instead of observing it (`lanes/envelope.ts`).
+Reading `param.value` is now correct in exactly one place — an immediate cut, where the time
+being asked about *is* now.
 
-- `timcsy/demucs-web` (MIT) wraps htdemucs ONNX for onnxruntime-web on WebGPU/WASM and
-  produces exactly the four stems we want.
-- `StemSplitio/htdemucs-onnx` (MIT) — **301 MB fp32, 157 MB fp16**, sizes read off the
-  CDN rather than the model card. ⚠️ **0 downloads, 0 likes: nobody has stress-tested
-  it.** Unproven.
-- Adjacent: `StemSplit/demucs-onnx` (export tooling), `demucs-onnx` on PyPI
-  (htdemucs / htdemucs_ft / htdemucs_6s).
+**2. Stop, seek and loop-wrap silenced nothing.** The transport called `noteOff` on the line
+after `noteOn`, and `noteOff` deleted the voice from the lane's map — so the maps were always
+empty and `releaseAll` had nothing to iterate. Notes rang on over the top of whatever came next,
+and `t.sounding` was dead state. Lanes now keep a voice until it is actually silent and expose
+`cut`/`cutAll` for the immediate case; the transport hands each note over exactly once.
 
-**Run it as a spike, not a commit.** Prove one song end-to-end on WebGPU; check memory on
-a **full-length** song rather than a clip; compare plain htdemucs against the Space's
-RoFormer + htdemucs_ft chain. Only then touch UI. The costs to weigh honestly: first
-visit goes 64 MB → ~157 MB (cached per device), and local would be roughly the Space's
-`fast` preset, not `best`.
+**3. The original stem gapped and clicked on every seek and every loop wrap.** `AudioLane.stop()`
+scheduled the stop in the future but called `disconnect()` **synchronously**, so the old audio
+vanished at once while the new source started up to a look-ahead later. Sources now own a gain
+node, the outgoing fade lands exactly on the splice point where the incoming one begins, and
+nodes are disconnected on `ended`.
 
-**Cross-origin isolation: reuse audiosaw's, don't redo it.** The WASM fallback needs
-COOP/COEP, previously skipped because self-hosting the ORT wasm costs ~33 MB. audiosaw
-already pays it for `/stem-splitter`: `_headers:79-84`, **`credentialless`** (not
-`require-corp`, so subresources without CORP still load), binaries in `vendor/ort/`. A
-gotcha is already documented there — *a worker spawned from an isolated page must itself
-be served with a COEP header*, or it fails to be created at all, before its first line
-runs, with an opaque error. **New wrinkle here:** `/stemflipper/*` comes from a Pages
-**Function**, and `_headers` does not apply to Function responses, so the headers belong
-in `functions/stemflipper/[[path]].js`.
+**4. The sampler lane was clipping, and 4.7 dB hotter than the stem it blends against.** Measured
+per-lane on the demo fixture: original peaked 0.610, sampler **1.046**. A sampler voice plays at
+`velocity/127` of a sample already cut at mix level, so four tracks of one-shots stack past full
+scale and ride the master limiter, which on drum transients is distortion. A documented
+`SAMPLER_TRIM` now level-matches them — sampler rms 0.2311 against original 0.2312 — which is
+what makes crossfading between lanes mean anything. The smoke test's clip guard was set at
+`peak > 1.05`, just loose enough to wave 1.046 through; it is 1.0 now, plus a level-match check.
 
-**Free-compute alternatives were investigated on 2026-09-23 and all rejected — do not
-re-research them.** Another free HF CPU Space: blocked, HF now returns 402 for new
-cpu-basic Spaces (ours is grandfathered), and it would be ~7× realtime anyway.
-Cloudflare Workers AI: real free allowance but the audio catalog is Whisper, no
-separation model. Colab / Kaggle / GitHub Actions: all forbid backend-service use in
-their terms. Oracle Always Free: would work, but it is a server to own, still ~7×
-realtime. **The conclusion was: add no service, close the gap in the browser.**
+**5. No voice ceiling.** Transcribed MIDI is dense — the four-minute `other` stem was 1,161 notes
+— and at ~6 nodes a voice an unbounded lane builds hundreds of simultaneous oscillators. That
+does not sound like too many notes, it sounds like crackle. Ceilings with oldest-voice stealing:
+24 pitched, 40 drum, 48 sampler.
+
+**6. A late tick fired a burst of notes.** Late notes were clamped to `ctx.currentTime`, so one
+stalled frame turned a missed beat into a cluster. Notes more than 35 ms late are now dropped and
+counted (`transport.dropped`), and the look-ahead tracks the tick rate actually being achieved
+rather than assuming 25 ms — which also keeps a backgrounded tab (timers throttled to ~1 Hz)
+playing instead of stuttering.
+
+**7. Exports played a semitone and a half flat.** `decodeAudio`'s cache key was URL + mono only,
+so a stem decoded by the live 48 kHz AudioContext was handed to the 44.1 kHz
+`OfflineAudioContext` used for rendering — an AudioBuffer plays at its *context's* rate, so the
+export came out 8.8% slow. The sample rate is in the key now.
+
+**8. Notes were never sorted, but the scheduler requires it.** `notesFromRows` returned rows in
+file order while the transport walks each track with a monotonic cursor and bisects with
+`lowerBound`. One out-of-order row meant notes skipped or fired late in a bunch. It sorts now,
+with ids still tied to the row index so edits still map back to `project.json`.
+
+**9. Smaller ones, each real:** cymbals truncated (the noise table was 0.5 s un-looped while the
+crash voice asks for 1.4 s — now 2 s and looped); the playhead ran **backwards** across a loop
+wrap, and up to a tick of notes was dropped at the end of every pass (`wrapAt` returned before
+scheduling); seeking into a held pad left the synth silent until the next note while the stem
+carried on; the FX button was inert while playing (the EQ chain is now always built, flat, and
+its band gains ramped); per-note nodes were never disconnected.
+
+**Main-thread economies, because the scheduler is a timer on the same thread as the canvases.**
+`levels()` allocated a Float32Array per track and peak-scanned it every animation frame; it runs
+at 20 Hz. `LaneStrip` had `useEffect(draw)` with no dependency array, so all three strips per
+track redrew their full per-pixel waveform every frame to move a one-pixel playhead — the content
+is cached to an offscreen canvas and blitted now. The playhead signal is only written when it
+moves.
+
+**Verified in a browser, not just in tests.** 12 s of continuous playback with all three lanes
+blended: **0 notes dropped**, no stall (worst step 110 ms between 100 ms polls), seek and loop
+both land where asked, no console errors. 220 vitest tests (was 203) and all seven smoke
+scenarios green. New coverage where there was none: `engineVoices`, `engineLanes`,
+`transportLoop`, plus `fakeAudio.ts`.
+
+**Still open, deliberately:** `PianoRoll` redraws per frame, but it culls off-screen notes so the
+loop is bounded by what is visible; `peaksFor` scans a whole decoded buffer synchronously on the
+main thread, which will stutter if it lands mid-playback; and `setTargetAtTime` is asymptotic, so
+a muted track settles around -43 dB rather than at true silence.
+
+### DONE (2026-09-23) — the browser path does four stems, and is now the fast one
+
+The stem gap is closed, but not by the model the plan named. Everything below was measured
+on the dev machine (Apple M1, 8 GB); `web/scripts/local_bench.mjs` reprints the table.
+
+**The browser engine list, all offered in the run screen with their trade-offs spelled out:**
+
+| engine | stems | download | end-to-end /s, GPU | end-to-end /s, 1 core | notes |
+|---|---|---|---|---|---|
+| `spleeter4` **(default)** | 4 | 79 MB | **0.71x** | **1.15x** | Spleeter 4stems, Apache-2.0 |
+| `mdx2` | 2 | 64 MB | 1.35x | 31.25x | the old default; cleanest vocal |
+| `htdemucs4` | 4 | 180 MB | ~18.5x | worse | closest to the Space, never defaulted |
+
+**Those are END-TO-END, and that distinction bit once already.** Separation is no longer the
+expensive half. On a 4-minute track the default engine separates in 58 s (0.24x) and then
+spends 112 s (0.47x) transcribing four stems — twice the transcription the two-stem path did.
+A table built from separation alone had the run screen promising about a minute and
+delivering three, and had `capability.ts` telling people a single-core run was "quicker than
+the song is long" when it is in fact a little longer. Both are fixed; `local_bench.mjs`
+measures the whole run so it cannot drift back.
+
+**The two htdemucs exports the plan was built around do not work, and the reason is worth
+keeping.** `StemSplitio/htdemucs-onnx` and `-6s-onnx` abort onnxruntime-web with a bare
+`Aborted()` — on the **WASM EP as well as WebGPU**, at every `graphOptimizationLevel`, from
+cached bytes. It is not size: the 180 MB export that does work is larger. Their traced graph
+is **24,917 nodes** (11,684 `Constant`, 2,968 `Shape`, 2,090 `Slice`, 684 `ScatterND`) for
+~90 real convolutions; `timcsy`'s export of the same network is **1,524 nodes** and loads in
+7 s. Both StemSplitio files are valid ONNX and load in full onnxruntime, and their card's
+"1.6 s per segment on an M4 Pro" does not reproduce — **253 s per segment** here on CPU, 4x
+slower than timcsy's. A control run pinned the harness: the production 64 MB MDX model loads
+on WebGPU in 6.7 s. **There is no working 6-stem export from anyone**, so the "six stems"
+option that was agreed has no candidate.
+
+**htdemucs itself is simply too heavy for this class of device**, which no amount of
+configuration fixes: ~18x realtime in the browser, and ~10x realtime in *native*
+onnxruntime on CPU on the same Mac. It is shipped as an option because on a strong GPU it is
+~3-5x and its separation really is the server's (correlation 0.91-0.99 against real Space
+output for the same audio, residual -40.2 dB). It is never the default.
+
+**Spleeter 4stems is the default because it wins on every axis that matters here**: four
+stems instead of two, a smaller download than htdemucs, and ~5x faster than the engine that
+shipped before it. Correlation against real Space stems is 0.86-0.92 — rougher than
+htdemucs, obviously better than not having the stems.
+
+**The invariant that makes it trustworthy.** Spleeter's ratio masks sum to 1 by
+construction, so the four stems must reconstruct the mix, and they do: **-149 dB** on a 30 s
+clip, **-165 dB** on a 4-minute track. That one number tests the window flavour, the hop, the
+mask and the band extension at once — every one of which has a wrong version that still
+sounds approximately right. It is computed in the browser (`spleeter.ts::residualDb`), written
+to `project.json` as `separation.residual_db` exactly as the server does, and the smoke test
+fails the run if it rises above -60 dB. For reference, the live server reports -20.3 dB.
+Two ways to read it wrongly, both already paid for: with Spleeter's default `zeros` band
+extension it is -23 dB and that is *correct* (the >11 kHz band is being discarded, which is
+why we use `average`); and measuring it after a 16-bit write costs ~75 dB on its own.
+
+**Cross-origin isolation stopped being load-bearing.** It used to be the only way to help a
+visitor without WebGPU, because MDX costs 31x realtime on one core. Spleeter is 0.66x on one
+core — faster than the song is long with no isolation at all. The headers are now worth about
+2x on the default path, so `COOP_COEP.md` (new, repo root) carries the exact
+`functions/stemflipper/[[path]].js` patch for the audiosaw repo as an optimisation rather than
+a blocker, including the two traps already documented there (a worker spawned from an isolated
+page needs its own COEP header, and `sw.js` must bypass `/stemflipper`).
+
+**Shape of the code.** `local.worker.ts` went from one hard-coded model to a dispatcher over
+`spleeter.ts` / `mdx.ts` / `demucsHybrid.ts`, with `ortRuntime.ts` owning the runtime and the
+Cache-API model fetch and `engines.ts` holding the one table both the worker and the UI read.
+`pipeline.ts` is table-driven over however many stems the engine returns, and its per-stem
+transcription thresholds, colours and GM programs mirror the server's own tables so a track
+lands on the same numbers wherever it ran.
+
+**Two things the spike found that are now load-bearing in the code, with the numbers:**
+1. **Stream the work, do not batch it.** Doing Spleeter whole-file needs the entire complex
+   spectrogram plus all four stem outputs live at once: **1471 MB** on a 4-minute track, and
+   it went *superlinear* under GC pressure (0.81 s/s against 0.21 s/s). Four splits at a time
+   holds the heap flat at ~625 MB for a numerically identical -165.1 dB.
+2. **One shared window sum.** It is identical for every stem and every channel. Hoisting the
+   mask denominator out of the per-stem loop, by contrast, was measured and is *not* worth it
+   (33.0 -> 32.8 s): the cost is the 86,016 inverse 4096-point FFTs. The remaining lever is
+   packing L/R into one complex transform, as `spectral.js::inversePair` already does for MDX.
+
+**Drums.** The browser has no DrumSep, so it cannot do `drums_hier`. The *classifier* is the
+server's `transcribe_drums` verbatim (50 ms window, magnitude below 150 Hz and above 5 kHz,
+same thresholds, same GM notes), so a hit both agree on gets the same note number. The
+*onset detector* is not: librosa's mel flux runs near 43 fps and is smoothed by its own
+window, while `tempo.js::onsetEnvelope` runs at 800 fps, where the RMS of a 55 Hz kick ripples
+*inside* the hit and every ripple reads as another onset — four kicks came back as **twelve**
+until the envelope was smoothed and a peak was required to be the largest value in a +/-30 ms
+neighbourhood (which is what librosa's `pre_max`/`post_max` are for). `test/localDrums.test.ts`
+pins it at exactly four. `transcription.engine` says `drums_onset (browser)` and does not
+claim to be the server's.
+
+**Still server-only, and `stages` still says so:** samples, instruments, loops, phrases,
+effects and the synth fit (`samples=skipped`), plus the drum-kit split and chord detection.
+Chords and sections in the browser are the obvious next piece — `analysis/chords.py` is 112
+lines of numpy-only template matching and `local/analysis.ts` already has `chromaOf()` and
+beats, so `project.chords` could stop being `[]`.
 
 
 - **2026-09-22 (Opus, N1-N6 except sign-in):** The site is rebuilt and live.

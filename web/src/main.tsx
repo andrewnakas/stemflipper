@@ -40,6 +40,31 @@ render(<App />, root);
     await session.value?.instrumentsReady;
     return true;
   },
+  /**
+   * Render a blend to a WAV, base64, so a test can pull the audio out and listen to it.
+   * `lanes` sets every track's three faders, e.g. {original: 0, synth: 1, sampler: 1}.
+   */
+  async renderWav(opts?: { to?: number; lanes?: { original: number; synth: number; sampler: number } }) {
+    const to = opts?.to ?? Math.min(20, project.value!.song.duration);
+    const want = opts?.lanes;
+    if (want) {
+      for (const t of project.value!.tracks) {
+        for (const l of ["original", "synth", "sampler"] as const) {
+          (window as any).__sf.setLane(t.id, l, want[l]);
+        }
+      }
+    }
+    const { renderMix } = await import("./engine/render");
+    const { encodeWav } = await import("./export/wav");
+    const buf = await renderMix(project.value!, assetSource.value!, mixer.value!, notesByTrack.value, { to });
+    const blob = encodeWav(buf, 16);
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let s = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(s);
+  },
   async renderMix(opts?: { to?: number }) {
     const { renderMix, bufferRms, bufferPeak } = await import("./engine/render");
     const buf = await renderMix(project.value!, assetSource.value!, mixer.value!, notesByTrack.value, {

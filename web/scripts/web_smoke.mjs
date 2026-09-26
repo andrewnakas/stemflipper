@@ -10,8 +10,9 @@
  *   keep     keep a song in the browser, reload, reopen it and hear it
  *   editor   pick tracks and lanes, render what needs rendering, and check the project
  *            file against the rules audiosaw's editor enforces
- *   local    the whole pipeline in the browser — opt-in: it downloads a 64 MB model and
- *            takes ~1x realtime with WebGPU but ~31x without, so CI does not run it
+ *   local    the whole pipeline in the browser — opt-in: it downloads a separation model
+ *            (79-180 MB depending on --engine), so CI does not run it.
+ *            --engine spleeter4 (default, 4 stems) | mdx2 (2 stems) | htdemucs4 (slow)
  *
  * The upload and quota scenarios need the mock backend running:
  *   node scripts/mock_backend.mjs --port 7861 [--mode quota]
@@ -83,6 +84,15 @@ function launchArgs() {
   return {
     executablePath: process.env.CHROME_PATH || systemChrome || undefined,
     headless: "new",
+    // The local scenario alone gets a persistent profile, so the Cache API keeps the
+    // separation model between runs: a cold fetch of it is minutes on its own and would
+    // dominate (and time out) a test that is meant to be about the pipeline. Every other
+    // scenario stays on a throwaway profile — `keep` in particular asserts on IndexedDB and
+    // must not inherit state from a previous run.
+    ...(SCENARIO === "local"
+      ? { userDataDir: process.env.SMOKE_PROFILE || "/tmp/claude-501/stemflipper-smoke-local" }
+      : {}),
+    protocolTimeout: 3_600_000,
     args: [
       "--no-sandbox",
       // NOTE: this masks the "AudioContext.resume() never settles without a gesture"
@@ -157,6 +167,7 @@ async function scenarioFixture(page) {
   // arrive afterwards, so wait for them before asking those lanes to make a sound.
   await page.evaluate(() => window.__sf.waitForInstruments());
 
+  const laneLevels = {};
   for (const lane of ["original", "synth", "sampler"]) {
     const result = await page.evaluate(async (laneId) => {
       const ids = window.__sf.state.project.tracks.map((t) => t.id);
@@ -167,9 +178,35 @@ async function scenarioFixture(page) {
       }
       return window.__sf.renderMix({ to: 4 });
     }, lane);
+    laneLevels[lane] = result;
     note(`  lane ${lane.padEnd(9)} rms=${result.rms.toFixed(4)} peak=${result.peak.toFixed(3)}`);
     if (!(result.rms > 0.001)) problems.push(`lane ${lane} rendered silence (rms ${result.rms})`);
-    if (result.peak > 1.05) problems.push(`lane ${lane} clipped (peak ${result.peak})`);
+    // Full scale, not 1.05. The sampler lane used to land at 1.046 — genuinely clipping, and
+    // the old threshold was just loose enough to wave it through.
+    if (result.peak > 1.0) problems.push(`lane ${lane} clipped (peak ${result.peak})`);
+  }
+  // All three lanes up at once is what someone blending actually hears, and it is where the
+  // sampler's missing headroom used to show: a render of the demo clipped 16 samples at peak
+  // 1.000. Nothing may reach full scale.
+  const blend = await page.evaluate(async () => {
+    const ids = window.__sf.state.project.tracks.map((t) => t.id);
+    for (const id of ids) {
+      for (const l of ["original", "synth", "sampler"]) window.__sf.setLane(id, l, 0.7);
+    }
+    return window.__sf.renderMix({ to: 4 });
+  });
+  note(`  all three lanes at 70%: peak ${blend.peak.toFixed(3)} rms ${blend.rms.toFixed(4)}`);
+  if (blend.peak >= 0.999) problems.push(`a three-lane blend clips (peak ${blend.peak.toFixed(3)})`);
+
+  // The three lanes are meant to be crossfaded against each other, so the reconstruction has
+  // to sit at the level of the stem it replaces. The sampler plays velocity-scaled samples cut
+  // at mix level, so without a trim four tracks of one-shots stack past full scale.
+  if (laneLevels.original?.rms > 0 && laneLevels.sampler?.rms > 0) {
+    const db = 20 * Math.log10(laneLevels.sampler.rms / laneLevels.original.rms);
+    note(`  sampler vs original: ${db >= 0 ? "+" : ""}${db.toFixed(1)} dB`);
+    if (Math.abs(db) > 4) {
+      problems.push(`sampler lane is ${db.toFixed(1)} dB off the original — lane trim drifted`);
+    }
   }
 
   const advanced = await page.evaluate(async () => {
@@ -261,6 +298,50 @@ async function scenarioDemo(page) {
     downloads: document.querySelectorAll(".disclosure").length,
     ctx: window.__sf.session?.ctx?.state,
   }));
+
+  // The three lanes can be blended from here, without opening Studio — but collapsed, because
+  // someone checking that the run worked should not have to walk past a mixer to reach Download.
+  await page.evaluate(() => window.__sf.waitForInstruments());
+  const mix = await page.evaluate(async () => {
+    const openBefore = document.querySelectorAll(".stemrow__more details[open]").length;
+    for (const d of document.querySelectorAll(".stemrow__more details")) d.open = true;
+    await new Promise((r) => setTimeout(r, 800));
+    const row = [...document.querySelectorAll(".stemrow")].find((r) =>
+      r.querySelectorAll(".lanemix__row input:not([disabled])").length >= 3,
+    );
+    let faderWorked = null;
+    if (row) {
+      const id = [...document.querySelectorAll(".stemrow")].indexOf(row);
+      const trackId = window.__sf.state.project.tracks[id]?.id;
+      const slider = row.querySelectorAll(".lanemix__row input")[2];
+      slider.value = "80";
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+      faderWorked = window.__sf.state.mixer.lanes[trackId]?.sampler;
+    }
+    return {
+      openBefore,
+      laneRows: document.querySelectorAll(".lanemix__row").length,
+      rolls: document.querySelectorAll(".stemrow__roll canvas").length,
+      pads: document.querySelectorAll(".pad").length,
+      faderWorked,
+    };
+  });
+  note(`listen mixer: ${mix.laneRows} lane faders, ${mix.rolls} rolls, ${mix.pads} sample pads`);
+  if (mix.openBefore !== 0) problems.push("the Listen mixer should start collapsed");
+  if (mix.laneRows < 3) problems.push(`expected 3 lane faders per track, saw ${mix.laneRows}`);
+  if (!mix.rolls) problems.push("no piano roll on the Listen page");
+  if (!mix.pads) problems.push("no sample pads on the Listen page");
+  if (!(mix.faderWorked > 0.5)) problems.push(`the sampler fader did not reach the mixer (${mix.faderWorked})`);
+
+  // Clicking a pad must actually decode and play, not just highlight.
+  const padPlayed = await page.evaluate(async () => {
+    const pad = document.querySelector(".pad");
+    if (!pad) return null;
+    pad.click();
+    await new Promise((r) => setTimeout(r, 700));
+    return pad.querySelector(".pad__label")?.textContent ?? "?";
+  });
+  note(`  sample pad "${padPlayed}" auditioned`);
 
   // A bundle with no server behind it must still be downloadable in one piece, and the
   // zip has to contain the samples the instrument files name, not just what project.json
@@ -692,10 +773,13 @@ async function scenarioEditor(page) {
 }
 
 /**
- * The in-browser pipeline, end to end. Opt-in: it fetches a 64 MB model and runs a real
- * neural separation, which is fast on a GPU and very slow without one.
+ * The in-browser pipeline, end to end. Opt-in: it fetches a real separation model and runs
+ * real inference. Defaults to the four-stem engine, which is quicker than the song is long.
  */
 async function scenarioLocal(page) {
+  const engine = flag("engine", "spleeter4");
+  const expectStems = { spleeter4: 4, htdemucs4: 4, mdx2: 2 }[engine];
+  if (!expectStems) throw new Error(`unknown --engine ${engine}`);
   await page.goto(`${BASE}/`, { waitUntil: "networkidle0", timeout: 60_000 });
   await page.waitForFunction("window.__sf && window.__sf.ready === true", { timeout: 30_000 });
 
@@ -708,12 +792,46 @@ async function scenarioLocal(page) {
   await page.evaluate(() => {
     [...document.querySelectorAll(".where__opt")].find((o) => /In your browser/.test(o.textContent))?.click();
   });
+  // Pick the engine through the UI, so the picker itself is exercised rather than bypassed.
+  const LABELS = { spleeter4: "Four stems", mdx2: "Two stems", htdemucs4: "best quality" };
+  const picked = await page.evaluate((want, labels) => {
+    const btn = [...document.querySelectorAll(".engine")].find((e) =>
+      new RegExp(labels[want], "i").test(e.textContent),
+    );
+    if (!btn) return { ok: false, seen: [...document.querySelectorAll(".engine")].map((e) => e.textContent.slice(0, 40)) };
+    btn.click();
+    return { ok: true };
+  }, engine, LABELS);
+  if (!picked.ok) {
+    problems.push(`engine "${engine}" not offered in the picker (saw ${JSON.stringify(picked.seen)})`);
+  } else {
+    // Preact re-renders after the signal settles, so aria-pressed is not true synchronously.
+    await page
+      .waitForFunction(
+        (want, labels) => {
+          const btn = [...document.querySelectorAll(".engine")].find((e) =>
+            new RegExp(labels[want], "i").test(e.textContent),
+          );
+          return btn?.getAttribute("aria-pressed") === "true";
+        },
+        { timeout: 5_000 },
+        engine,
+        LABELS,
+      )
+      .catch(() => problems.push(`clicking the ${engine} card did not select it`));
+  }
 
   const t0 = Date.now();
   await page.evaluate(() => {
     [...document.querySelectorAll("button")].find((b) => /Flip it/.test(b.textContent))?.click();
   });
-  await page.waitForFunction("['ready','error'].includes(window.__sf.job.kind)", { timeout: 600_000, polling: 500 });
+  // Generous: a cold first run downloads the model before it starts, and the four-stem
+  // engine then transcribes every stem. 600 s was not enough and failed as an opaque
+  // "Waiting failed" rather than as anything diagnosable.
+  await page.waitForFunction("['ready','error'].includes(window.__sf.job.kind)", {
+    timeout: 2_400_000,
+    polling: 1000,
+  });
 
   const final = await page.evaluate(() => {
     const s = window.__sf.state;
@@ -723,6 +841,9 @@ async function scenarioLocal(page) {
       route: window.__sf.route,
       sourceKind: s.source?.kind,
       device: s.project?.separation?.device,
+      residualDb: s.project?.separation?.residual_db ?? null,
+      engine: window.__sf.state.project?.separation?.chain?.[0]?.model ?? null,
+      kinds: (s.project?.tracks || []).map((t) => `${t.id}:${t.kind}`),
       tracks: (s.project?.tracks || []).map((t) => `${t.id}:${(s.notes[t.id] || []).length}n`),
       stages: (s.project?.stages || []).map((x) => `${x.name}=${x.status}`),
       phases: window.__sf.jobLog,
@@ -738,7 +859,22 @@ async function scenarioLocal(page) {
   if (final.route !== "listen") problems.push("a local run should land on Listen");
   // Nothing may have been uploaded, so the assets must be local blobs.
   if (final.sourceKind !== "blob") problems.push(`local output should be blobs, got "${final.sourceKind}"`);
-  if (final.tracks.length !== 2) problems.push(`expected vocals + instrumental, got ${final.tracks.join(",")}`);
+  if (final.tracks.length !== expectStems) {
+    problems.push(`expected ${expectStems} stems from ${engine}, got ${final.tracks.join(",")}`);
+  }
+  note(`kinds: ${final.kinds.join(" ")} · residual ${final.residualDb} dB · model ${final.engine}`);
+  if (expectStems === 4) {
+    // Drums must be a drum track, or the piano roll, the score and channel 10 are all wrong.
+    if (!final.kinds.includes("drums:drums")) problems.push(`no drums track with kind "drums": ${final.kinds.join(",")}`);
+    for (const want of ["vocals", "drums", "bass", "other"]) {
+      if (!final.tracks.some((t) => t.startsWith(`${want}:`))) problems.push(`missing the ${want} stem`);
+    }
+  }
+  // The stems must reconstruct the song: it is what makes the Original lanes play back.
+  if (engine === "spleeter4") {
+    if (final.residualDb === null) problems.push("a four-stem local run should report residual_db");
+    else if (final.residualDb > -60) problems.push(`stems do not sum back to the mix (residual ${final.residualDb} dB)`);
+  }
   if (!final.stages.includes("samples=skipped")) problems.push("local run should say samples were skipped");
 
   await page.evaluate(() => window.__sf.waitForInstruments());
