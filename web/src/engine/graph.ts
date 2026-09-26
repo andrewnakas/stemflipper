@@ -5,12 +5,12 @@
  * move, which clicked and made live faders impossible.
  *
  *   original ─┐
- *   synth    ─┼─ trackIn ─ EQ… ─ pan ─ volume ─ mute ─┬─ master ─ limiter ─ analyser ─ out
+ *   synth    ─┼─ trackIn ─ EQ… ─ pan ─ volume ─ mute ─┬─ master ─ limiter ─ ceiling ─ analyser ─ out
  *   sampler  ─┘                                        └─ reverb send ─ convolver ─┘
  */
 
 import type { Project, Track } from "../model/types";
-import { buildEqChain, chain, syntheticIR } from "./fx";
+import { buildEqChain, chain, softCeiling, syntheticIR } from "./fx";
 
 export interface TrackNodes {
   id: string;
@@ -31,6 +31,8 @@ export interface TrackNodes {
 export interface MixGraph {
   master: GainNode;
   limiter: DynamicsCompressorNode;
+  /** Memoryless soft ceiling: the thing that actually guarantees no clipping. See fx.ts. */
+  ceiling: WaveShaperNode;
   analyser: AnalyserNode;
   convolver: ConvolverNode | null;
   tracks: Map<string, TrackNodes>;
@@ -80,17 +82,24 @@ export function buildGraph(ctx: BaseAudioContext, project: Project, state: Mixer
   const master = ctx.createGain();
   master.gain.value = state.masterVolume;
 
+  // The limiter is the only thing between a blend and full scale, and with a 3 ms attack it
+  // was not actually doing that job: a three-lane blend of the CI fixture came out at peak
+  // 1.004 — transient overshoot, not steady-state gain, since a -1.5 dB threshold at 20:1
+  // could never pass unity otherwise. Drum one-shots are nothing but transient, so the attack
+  // has to be short enough to catch them. The soft knee is not decoration: it takes the edge
+  // off the gain riding that a zero-knee 20:1 wall makes audible on a dense mix.
   const limiter = ctx.createDynamicsCompressor();
-  limiter.threshold.value = -1.5;
-  limiter.knee.value = 0;
+  limiter.threshold.value = -3;
+  limiter.knee.value = 4;
   limiter.ratio.value = 20;
-  limiter.attack.value = 0.003;
-  limiter.release.value = 0.1;
+  limiter.attack.value = 0.0008;
+  limiter.release.value = 0.12;
 
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 1024;
 
-  master.connect(limiter).connect(analyser);
+  const ceiling = softCeiling(ctx);
+  master.connect(limiter).connect(ceiling).connect(analyser);
   analyser.connect(ctx.destination);
 
   let convolver: ConvolverNode | null = null;
@@ -109,7 +118,7 @@ export function buildGraph(ctx: BaseAudioContext, project: Project, state: Mixer
   for (const t of project.tracks) {
     tracks.set(t.id, buildTrack(ctx, t, state, master, convolver));
   }
-  return { master, limiter, analyser, convolver, tracks };
+  return { master, limiter, ceiling, analyser, convolver, tracks };
 }
 
 function buildTrack(
@@ -218,7 +227,7 @@ export function disposeGraph(graph: MixGraph | null): void {
       }
     }
   }
-  for (const n of [graph.master, graph.limiter, graph.analyser, graph.convolver]) {
+  for (const n of [graph.master, graph.limiter, graph.ceiling, graph.analyser, graph.convolver]) {
     try {
       n?.disconnect();
     } catch {
