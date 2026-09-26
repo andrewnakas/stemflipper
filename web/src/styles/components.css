@@ -224,3 +224,18 @@ kbd {
 /* VexFlow draws in black; on a dark page the stave has to be inverted to be legible. */
 .score-host { background: #fffdf8; border-radius: var(--r-sm); padding: var(--s2); min-height: 120px; }
 .score-host svg { display: block; }
+
+/* The engine choice inside the "in your browser" card: three genuinely different trades,
+   each with its own estimate and its own pros and cons. */
+.engines { grid-column: 1 / -1; display: flex; flex-direction: column; gap: var(--s2); }
+.engine {
+  display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left;
+  padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--surface); color: inherit; font: inherit; cursor: pointer;
+}
+.engine:hover { border-color: var(--text-dim); }
+.engine--on { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.engine__head { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.engine__why { display: flex; flex-direction: column; gap: 2px; }
+.engine__pro { color: var(--text-dim); }
+.engine__con { color: var(--text-dim); opacity: 0.8; }

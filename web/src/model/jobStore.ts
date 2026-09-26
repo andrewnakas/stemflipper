@@ -22,24 +22,45 @@ import { getSong, releaseSource, saveSong, sourceFor } from "./persist";
 import { openBundleFile } from "./zipLoader";
 import { preflight } from "./preflight";
 import { estimateWallSeconds, pickPreset } from "./quota";
-import { localEstimateSeconds, preferLocal } from "../local/capability";
+import { localEngineFor, localEstimateSeconds, preferLocal } from "../local/capability";
+import { DEFAULT_ENGINE, type LocalEngine } from "../local/engines";
 import { backend, mixer, notesByTrack, spaceId } from "./store";
 import type { Project } from "./types";
 
 export const job = signal<JobPhase>({ kind: "idle" });
 export type RunWhere = "browser" | "server";
 
-export const options = signal<{ preset: Preset; six: boolean; presetTouched: boolean; where: RunWhere }>({
+export const options = signal<{
+  preset: Preset;
+  six: boolean;
+  presetTouched: boolean;
+  where: RunWhere;
+  engine: LocalEngine;
+  /**
+   * Set once someone picks where to run or which engine to use. Without it the next
+   * `pickFile` silently overwrote an explicit choice — the old code guarded on
+   * `presetTouched`, which is a different question and left `where` sticky only if you
+   * happened to touch the preset first.
+   */
+  whereTouched: boolean;
+}>({
   preset: "balanced",
   six: false,
   presetTouched: false,
-  // Default decided per device in pickFile: local is unlimited and private, but only
-  // sensible where the browser can use a GPU.
+  // Decided per device and per song in pickFile: local is unlimited and private, and with
+  // the four-stem engine it costs roughly the song's own length — less on a GPU, a little
+  // more on a single core.
   where: "server",
+  engine: DEFAULT_ENGINE,
+  whereTouched: false,
 });
 
 export function setWhere(where: RunWhere): void {
-  options.value = { ...options.value, where };
+  options.value = { ...options.value, where, whereTouched: true };
+}
+
+export function setEngine(engine: LocalEngine): void {
+  options.value = { ...options.value, engine, whereTouched: true };
 }
 
 /** Every phase the current run passed through — the smoke test asserts on this. */
@@ -119,16 +140,21 @@ export async function pickFile(file: File): Promise<void> {
   }
   dispatch({ type: "pick", file: meta });
   suggestPreset(meta);
-  if (!options.value.presetTouched) {
-    options.value = { ...options.value, where: preferLocal(meta.durationS ?? 210) ? "browser" : "server" };
+  if (!options.value.whereTouched) {
+    const seconds = meta.durationS ?? 210;
+    options.value = {
+      ...options.value,
+      where: preferLocal(seconds) ? "browser" : "server",
+      engine: localEngineFor(seconds),
+    };
   }
   navigate("run");
 }
 
 /**
  * Run the whole thing on this machine: no account, no queue, no daily limit, and the
- * audio never leaves the device. Two stems rather than four, and no samples — that part
- * needs the server.
+ * audio never leaves the device. Four stems by default; no samples — that part needs the
+ * server. Which engine runs is `options.value.engine`; see `local/engines.ts`.
  */
 export async function startLocalJob(file: File): Promise<void> {
   controller?.abort();
@@ -152,7 +178,8 @@ export async function startLocalJob(file: File): Promise<void> {
     const { meta, problem } = await preflight(file);
     if (problem) throw problem;
     dispatch({ type: "pick", file: meta });
-    expectedS = localEstimateSeconds(meta.durationS ?? 210);
+    const engine = options.value.engine;
+    expectedS = localEstimateSeconds(meta.durationS ?? 210, undefined, engine);
 
     const { runLocally } = await import("../local/pipeline");
     const result = await runLocally(
@@ -166,6 +193,7 @@ export async function startLocalJob(file: File): Promise<void> {
           now: Date.now(),
         }),
       signal,
+      engine,
     );
 
     releaseCurrentBlobSource();

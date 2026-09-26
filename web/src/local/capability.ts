@@ -1,28 +1,45 @@
 /**
- * Can this device do the work, and how long will it take?
+ * Can this device do the work, which engine should it use, and how long will it take?
  *
- * This has to be answered BEFORE someone commits, because the spread is enormous.
- * Measured on the separation model: WebGPU runs about 1.1 s of wall clock per second of
- * audio, multi-threaded WASM about 10, and single-threaded WASM about 31. The same
- * 3:30 song is four minutes, half an hour, or an hour and three quarters.
+ * All three have to be answered BEFORE someone commits, because the spread is enormous and
+ * it is the difference between a pleasant minute and an abandoned hour. Every cost below
+ * lives in `engines.ts` and was measured, not guessed — `web/scripts/local_bench.mjs`
+ * prints the table.
  *
- * Threads need the page to be cross-origin isolated, which needs COOP/COEP headers the
- * host must send — so the same browser is fast or slow depending on where the page is
- * served from, and the UI should say so rather than let someone start a two-hour job.
+ * The shape of the problem changed when Spleeter became the default. The old two-stem model
+ * cost 1.1 s per second of audio on a GPU and 31 without one, so a device without WebGPU
+ * effectively could not run anything, and the only fix was COOP/COEP headers from the host
+ * to unlock threads. The default engine is 0.71 end to end on a GPU and 1.15 on a single
+ * core — so cross-origin isolation is now worth about 20%, rather than being the thing
+ * standing between most visitors and a local run.
+ *
+ * Note what those numbers include: transcribing four stems is a bigger share of a local run
+ * than separating them. On one core a run takes a little LONGER than the song itself, which
+ * is why the copy below says "about as long as the song" there and not "quicker" — it was
+ * briefly wrong about this, on the strength of a separation-only measurement.
  */
+
+import { DEFAULT_ENGINE, ENGINE_IDS, engineSpec, type LocalEngine } from "./engines";
 
 export type LocalSpeed = "gpu" | "threads" | "slow" | "unsupported";
 
 export interface LocalCapability {
   speed: LocalSpeed;
-  /** Wall-clock seconds of work per second of audio. */
+  /** Wall-clock seconds of work per second of audio, for the DEFAULT engine. */
   costPerSecond: number;
   /** True when running locally is a reasonable default for this device. */
   recommended: boolean;
   why: string;
 }
 
-const COST: Record<Exclude<LocalSpeed, "unsupported">, number> = { gpu: 1.1, threads: 10, slow: 31 };
+/** Beyond this, a local run is something to choose deliberately, not to be defaulted into. */
+export const MAX_COMFORTABLE_S = 15 * 60;
+
+/** Wall-clock seconds per second of audio for one engine on this device class. */
+export function engineCost(engine: LocalEngine, speed: LocalSpeed): number {
+  if (speed === "unsupported") return Infinity;
+  return engineSpec(engine).cost[speed];
+}
 
 export function localCapability(): LocalCapability {
   if (typeof Worker === "undefined" || typeof WebAssembly === "undefined") {
@@ -31,46 +48,72 @@ export function localCapability(): LocalCapability {
   if ((navigator as { gpu?: unknown }).gpu) {
     return {
       speed: "gpu",
-      costPerSecond: COST.gpu,
+      costPerSecond: engineCost(DEFAULT_ENGINE, "gpu"),
       recommended: true,
-      why: "Your graphics card can run the model, so this is about as fast as the song is long.",
+      why: "Your graphics card can run the models, so this takes about two thirds of the song's own length.",
     };
   }
   if (typeof crossOriginIsolated !== "undefined" && crossOriginIsolated && (navigator.hardwareConcurrency || 1) > 2) {
     return {
       speed: "threads",
-      costPerSecond: COST.threads,
-      recommended: false,
-      why: "Your browser will use several CPU cores. It works, but it is much slower than a graphics card.",
+      costPerSecond: engineCost(DEFAULT_ENGINE, "threads"),
+      recommended: true,
+      why: "Your browser will use several CPU cores — roughly the song's own length.",
     };
   }
   return {
     speed: "slow",
-    costPerSecond: COST.slow,
-    recommended: false,
-    why: "This page can only use one CPU core here, which makes local processing very slow.",
+    costPerSecond: engineCost(DEFAULT_ENGINE, "slow"),
+    // The default engine on one core is 1.15x realtime — slower than a GPU, but nowhere near
+    // a reason to push someone at the server and its daily limit.
+    recommended: true,
+    why: "This page can only use one CPU core here, so expect a little longer than the song itself.",
   };
 }
 
-/** Rough wall-clock seconds for a song of this length, including model start-up. */
-export function localEstimateSeconds(durationS: number, cap = localCapability()): number {
-  if (!Number.isFinite(cap.costPerSecond)) return Infinity;
-  return Math.round(15 + durationS * cap.costPerSecond);
+/** Rough wall-clock seconds for a song of this length on a given engine, incl. start-up. */
+export function localEstimateSeconds(
+  durationS: number,
+  cap = localCapability(),
+  engine: LocalEngine = DEFAULT_ENGINE,
+): number {
+  const cost = engineCost(engine, cap.speed);
+  if (!Number.isFinite(cost)) return Infinity;
+  return Math.round(15 + durationS * cost);
 }
 
 /**
  * Should running locally be the default for THIS song on THIS device?
  *
  * Capability alone is not enough: a 30-second clip is fine even on one CPU core, while an
- * 8-minute song without a GPU is four hours. Both were offered as the default before this.
+ * 8-minute song on the slow engine without a GPU is hours. Both were offered as the default
+ * before this guard existed.
  */
 export function preferLocal(durationS: number, cap = localCapability()): boolean {
   if (cap.speed === "unsupported") return false;
   return cap.recommended && localEstimateSeconds(durationS, cap) <= MAX_COMFORTABLE_S;
 }
 
-/** Beyond this, a local run is something to choose deliberately, not to be defaulted into. */
-export const MAX_COMFORTABLE_S = 15 * 60;
+/**
+ * The best engine for this song on this device: the most stems we can give someone without
+ * pushing them past the comfortable wait. Falls back to the cheapest if nothing fits, so
+ * the picker always has a sensible starting point.
+ */
+export function localEngineFor(durationS: number, cap = localCapability()): LocalEngine {
+  if (cap.speed === "unsupported") return DEFAULT_ENGINE;
+  const fits = ENGINE_IDS.filter(
+    (id) => localEstimateSeconds(durationS, cap, id) <= MAX_COMFORTABLE_S,
+  );
+  const pool = fits.length ? fits : [...ENGINE_IDS];
+  // Most stems first, then cheapest — so four stems beat two whenever both fit.
+  pool.sort((a, b) => {
+    const sa = engineSpec(a).stems.length;
+    const sb = engineSpec(b).stems.length;
+    if (sa !== sb) return sb - sa;
+    return engineCost(a, cap.speed) - engineCost(b, cap.speed);
+  });
+  return pool[0];
+}
 
 export function formatEstimate(seconds: number): string {
   if (!Number.isFinite(seconds)) return "not possible here";

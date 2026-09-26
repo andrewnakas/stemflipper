@@ -74,9 +74,9 @@ export function Landing() {
         <div class="grid-cards">
           <Card title="Stems">
             <p class="card__body small">
-              Vocals and instrumental in your browser; or vocals, drums, bass and the rest on
-              the server, with the drum kit split again into kick, snare, toms, hi-hat, ride
-              and crash.
+              Vocals, drums, bass and the rest — in your browser, quicker than the song is
+              long. On the server the drum kit is split again into kick, snare, toms, hi-hat,
+              ride and crash, and you get samples and instruments too.
             </p>
           </Card>
           <Card title="MIDI">
@@ -132,9 +132,9 @@ export function Landing() {
         </div>
         <div style={{ marginTop: "var(--s5)" }}>
           <Notice tone="info" title="You choose where it runs">
-            <b>In your browser</b> — vocals and instrumental, each transcribed to MIDI. Nothing
-            is uploaded, there is no limit, and it needs no account. Fast when your browser can
-            use your graphics card.
+            <b>In your browser</b> — four stems, each transcribed to MIDI. Nothing is uploaded,
+            there is no limit, and it needs no account. Roughly the length of the song itself —
+            quicker than that with a graphics card.
             <br />
             <b>On the server</b> — four stems, the drum kit split into its pieces, plus samples,
             instruments and loops. Your song is uploaded to a Hugging Face Space and deleted

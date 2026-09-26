@@ -22,12 +22,12 @@ fix the notes and export.
 
 | | in your browser | on the server |
 |---|---|---|
-| stems | vocals + instrumental | vocals, drums, bass, other — and the kit split into kick, snare, toms, hi-hat, ride, crash |
+| stems | vocals, drums, bass, other | the same four — and the kit split again into kick, snare, toms, hi-hat, ride, crash |
 | MIDI | yes | yes, with a tempo map and section markers |
 | samples, instruments, loops | — | drum one-shots with velocity layers and round robins, pitch-verified multisamples, bar-aligned loops, vocal chops |
 | uploads your song | no | yes, deleted within 6 hours |
 | limit | none | free GPU time, rationed per day |
-| speed (3:30 song) | ~4 min on a GPU, much slower without | ~1 min |
+| speed (3:30 song) | ~2.5 min on a GPU, ~4 min on one CPU core (plus a 79 MB model, once per device) | ~1 min |
 
 The in-browser path exists because the shared GPU pool is two minutes a day across
 *everyone* who is not signed in. It runs UVR-MDX-NET and basic-pitch through
@@ -127,10 +127,12 @@ own machine and skip the queue and the daily limit entirely.
 
 - Transcription is an **editable starting point**, not a finished score. Drums are the
   most accurate part; dense polyphony in `other` is the least.
-- In the browser you get two stems, not four. That is a model limit: Demucs' ONNX export
-  is 158 MB and onnxruntime-web cannot load it, while MDX-Net is 64 MB and works. Without
-  WebGPU the browser path is 10–30x slower than real time, and the page says so before you
-  start rather than after.
+- In the browser you get four stems, but not the drum-kit split, and no samples,
+  instruments or loops — those stay on the server. The browser default is Spleeter 4stems
+  (79 MB, Apache-2.0), whose separation is a little rougher than the server's chain. Two
+  other engines are offered with their trade-offs spelled out: a two-stem model with a
+  cleaner vocal, and htdemucs itself, which matches the server but costs minutes per
+  minute of audio. The run screen states the estimate for your song before you commit.
 - Beat tracking sometimes locks to double time on rock — the bundled example reports
   214 BPM for a track that a person would count at 107.
 - Samples inherit whatever bleed and reverb the separation left in the stem.
