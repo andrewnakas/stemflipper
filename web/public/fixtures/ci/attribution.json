@@ -1,0 +1,6 @@
+{
+  "title": "CI fixture",
+  "artist": "Synthesised by scripts/make_ci_fixture.mjs",
+  "license": "None — not a recording",
+  "note": "Deterministic tones and noise, so the tests assert on numbers rather than on music."
+}

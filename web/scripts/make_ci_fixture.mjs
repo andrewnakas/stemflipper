@@ -188,4 +188,22 @@ const project = {
   stages: [{ name: "separate", status: "ok", seconds: 0, detail: "ci fixture" }],
 };
 write("project.json", JSON.stringify(project, null, 2));
+
+// Every fixture carries one of these, so opening one does not fetch a file that is not there.
+// `openFixture` tolerates a missing attribution, but the request still 404s on a real server —
+// which local testing hides, because vite preview answers an unknown path with index.html and a
+// 200. It only showed up running the smoke test against the deployed site.
+write(
+  "attribution.json",
+  JSON.stringify(
+    {
+      title: "CI fixture",
+      artist: "Synthesised by scripts/make_ci_fixture.mjs",
+      license: "None — not a recording",
+      note: "Deterministic tones and noise, so the tests assert on numbers rather than on music.",
+    },
+    null,
+    2,
+  ),
+);
 console.log(`ci fixture written to ${OUT} (${project.tracks.length} tracks)`);

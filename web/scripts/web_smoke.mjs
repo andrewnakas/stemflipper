@@ -119,6 +119,15 @@ function watch(page) {
   });
   page.on("response", (res) => {
     if (res.status() >= 400) problems.push(`HTTP ${res.status()} ${res.url()}`);
+    // `vite preview` answers an unknown path with index.html and a 200, so a missing asset is
+    // invisible locally and only 404s once deployed — which is how a stale request for the CI
+    // fixture's attribution.json survived until the suite was pointed at the live site. An
+    // asset that comes back as HTML is that masked 404.
+    const url = res.url();
+    if (/\.(json|wav|flac|mp3|mid|onnx|zip)(\?|$)/.test(url)) {
+      const type = res.headers()["content-type"] || "";
+      if (/text\/html/.test(type)) problems.push(`masked 404 (got index.html): ${url}`);
+    }
   });
 }
 
