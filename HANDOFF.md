@@ -102,6 +102,28 @@ both land where asked, no console errors. 220 vitest tests (was 203) and all sev
 scenarios green. New coverage where there was none: `engineVoices`, `engineLanes`,
 `transportLoop`, plus `fakeAudio.ts`.
 
+**The ceiling is a WaveShaperNode, not the limiter.** `DynamicsCompressorNode` is a compressor:
+it overshoots on transients, and drum one-shots are nothing but transient, so no threshold or
+ratio turns it into a ceiling — a three-lane blend came out at peak 1.004 with -1.5 dB at 20:1,
+which no steady-state gain could explain. A WaveShaperNode is memoryless, so whatever curve it
+holds IS its output range. Below 0.7 the curve is exactly y = x (ordinary listening is
+bit-identical); above it a tanh with unit derivative at the join asymptotes to 0.98. Measured on
+the demo, three lanes at 70%: peak 1.000 with 16 clipped samples before any of this, 0.972 with
+the limiter alone, **0.897 with the ceiling** — and rms went *up* (0.2386 → 0.2426) because a
+gentler knee limits less overall, while the sharpest transient in the file got smaller. Every
+fader configuration now lands under 0.93, including all three lanes at 100%, which was 1.009.
+
+**Two testing lessons from pushing this, both of which cost a red build.**
+1. **`vite preview` answers an unknown path with index.html and a 200**, so a missing asset is
+   invisible locally and only 404s once deployed. That hid a stale request for the CI fixture's
+   `attribution.json` until the suite was pointed at audiosaw.com. `web_smoke.mjs` now treats an
+   asset that comes back as `text/html` as the masked 404 it is, which reproduces it locally.
+2. **Never `vi.stubGlobal("performance", …)`.** vitest uses `performance.mark`/`measure` for its
+   own timing, so replacing the object with a bare `{ now }` left the runner without them: the
+   suite still passed locally and hung for nine minutes on CI. Spy on the method. Stubbing
+   `window` is safe here for the opposite reason — it does not exist in this environment at all,
+   so the stub is purely additive.
+
 **Still open, deliberately:** `PianoRoll` redraws per frame, but it culls off-screen notes so the
 loop is bounded by what is visible; `peaksFor` scans a whole decoded buffer synchronously on the
 main thread, which will stutter if it lands mid-playback; and `setTargetAtTime` is asymptotic, so
