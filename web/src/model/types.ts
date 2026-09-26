@@ -157,15 +157,24 @@ export interface Patch {
 
 export type OscWave = "saw" | "square" | "triangle" | "sine" | "noise";
 
+/**
+ * Sorted by start time, because the transport's scheduler depends on it.
+ *
+ * The scheduler walks each track with a monotonic cursor and bisects with `lowerBound`, both
+ * of which assume ascending starts; one out-of-order row made it skip notes or fire them late
+ * in a bunch. The ids stay tied to the ROW index so an edit still maps back to project.json.
+ */
 export function notesFromRows(trackId: string, rows: NoteRow[]): Note[] {
-  return rows.map((r, i) => ({
-    id: `${trackId}:${i}`,
-    pitch: r[0],
-    start: r[1],
-    end: r[2],
-    vel: r[3],
-    conf: r.length > 4 ? r[4] : 0.7,
-  }));
+  return rows
+    .map((r, i) => ({
+      id: `${trackId}:${i}`,
+      pitch: r[0],
+      start: r[1],
+      end: r[2],
+      vel: r[3],
+      conf: r.length > 4 ? r[4] : 0.7,
+    }))
+    .sort((a, b) => a.start - b.start || a.pitch - b.pitch);
 }
 
 export function rowsFromNotes(notes: Note[]): NoteRow[] {

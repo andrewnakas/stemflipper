@@ -83,7 +83,10 @@ export async function decodeAudio(
   url: string,
   opts: { mono?: boolean } = {},
 ): Promise<AudioBuffer> {
-  const key = `${url}|${opts.mono !== false ? "mono" : "stereo"}`;
+  // The sample rate belongs in the key. An AudioBuffer plays at its CONTEXT's rate, so a
+  // stem decoded by the live 48 kHz AudioContext and then reused by a 44.1 kHz
+  // OfflineAudioContext for an export came out 8.8% slow and a semitone and a half flat.
+  const key = `${url}|${opts.mono !== false ? "mono" : "stereo"}|${ctx.sampleRate}`;
   let hit = audioCache.get(key);
   if (!hit) {
     hit = fetchBytes(url)

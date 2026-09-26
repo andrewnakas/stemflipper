@@ -40,10 +40,9 @@ export async function renderMix(
     for (const n of notes) {
       const when = Math.max(0, n.start - from);
       const until = Math.max(when + 0.02, n.end - from);
+      // noteOn schedules the whole envelope, release included — see lanes/envelope.ts.
       runtime.synth.noteOn(n, when, until);
       runtime.sampler.noteOn(n, when, until);
-      runtime.synth.noteOff(n.id, until);
-      runtime.sampler.noteOff(n.id, until);
     }
   }
 

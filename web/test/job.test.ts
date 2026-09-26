@@ -191,3 +191,53 @@ describe("classifyError", () => {
     }
   });
 });
+
+/**
+ * The local path's own event. Both paths converge on one `JobPhase`, so the bar and the
+ * stepper serve the browser run and the server run alike — but until now only the server's
+ * `gradio` events were covered, and this branch places progress on that shared 0..1 scale.
+ */
+describe("a run in the browser", () => {
+  const picked: JobPhase = { kind: "picked", file: FILE };
+
+  it("lands each step inside the slice of the bar the server uses", () => {
+    for (const step of ["load", "separate", "transcribe", "package"] as const) {
+      const [lo, hi] = STEP_BOUNDS[step];
+      const mid = reduce(picked, { type: "local", step, pct: 0.5, desc: "x", now: 0 }, { expectedS: 30 });
+      if (mid.kind !== "running") throw new Error("expected running");
+      expect(mid.pct).toBeGreaterThanOrEqual(lo);
+      expect(mid.pct).toBeLessThanOrEqual(hi);
+      expect(mid.pct).toBeCloseTo(lo + (hi - lo) * 0.5, 6);
+    }
+  });
+
+  it("keeps the step's own start when it has no percentage yet", () => {
+    const p = reduce(picked, { type: "local", step: "separate", pct: null, desc: "…", now: 0 }, { expectedS: 30 });
+    if (p.kind !== "running") throw new Error("expected running");
+    expect(p.pct).toBe(STEP_BOUNDS.separate[0]);
+  });
+
+  it("never lets the shown bar go backwards inside a step", () => {
+    const a = reduce(picked, { type: "local", step: "separate", pct: 0.8, desc: "a", now: 0 }, { expectedS: 30 });
+    const b = reduce(a, { type: "local", step: "separate", pct: 0.2, desc: "b", now: 1 }, { expectedS: 30 });
+    if (b.kind !== "running") throw new Error("expected running");
+    expect(b.shown).toBeGreaterThanOrEqual(STEP_BOUNDS.separate[0] + (STEP_BOUNDS.separate[1] - STEP_BOUNDS.separate[0]) * 0.8);
+  });
+
+  it("restarts the step clock only when the step actually changes", () => {
+    const a = reduce(picked, { type: "local", step: "separate", pct: 0.1, desc: "a", now: 100 }, { expectedS: 30 });
+    const same = reduce(a, { type: "local", step: "separate", pct: 0.2, desc: "b", now: 200 }, { expectedS: 30 });
+    const next = reduce(same, { type: "local", step: "transcribe", pct: 0, desc: "c", now: 300 }, { expectedS: 30 });
+    if (same.kind !== "running" || next.kind !== "running") throw new Error("expected running");
+    expect(same.stepStartedAt).toBe(100);
+    expect(next.stepStartedAt).toBe(300);
+    expect(next.startedAt).toBe(100);
+  });
+
+  it("carries the file through, so the run screen keeps its name and duration", () => {
+    const p = reduce(picked, { type: "local", step: "separate", pct: 0.1, desc: "x", now: 0 }, { expectedS: 30 });
+    if (p.kind !== "running") throw new Error("expected running");
+    expect(p.file.name).toBe(FILE.name);
+    expect(p.file.durationS).toBe(FILE.durationS);
+  });
+});

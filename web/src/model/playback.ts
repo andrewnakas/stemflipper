@@ -20,14 +20,40 @@ export const assetLoad = signal<{ loaded: number; total: number } | null>(null);
 
 let raf = 0;
 
-/** Drives the playhead, the play/stop state and the meters from one animation frame loop. */
+/** Meters refresh at this rate rather than every frame — see startClock. */
+const LEVELS_HZ = 20;
+
+/**
+ * Drives the playhead, the play/stop state and the meters from one animation frame loop.
+ *
+ * The note scheduler is a `setInterval` on this same thread, so whatever happens here is
+ * competing with it: a frame that overruns makes notes late. Two economies matter.
+ *
+ * `levels()` allocates a Float32Array per track and peak-scans it, and every write to the
+ * signal re-renders each track's meter — at 60 Hz, for a six-stem song, for a reading the eye
+ * cannot follow anyway. It runs at 20 Hz instead.
+ *
+ * The playhead signal is only written when it has actually moved by a meaningful amount, so a
+ * paused page does no work at all rather than re-rendering every canvas that reads it.
+ */
 export function startClock(): () => void {
+  let lastLevels = 0;
+  let lastHead = -1;
   const tick = () => {
     const s = session.value;
     if (s) {
-      playhead.value = s.transport.now();
-      playing.value = s.transport.playing;
-      if (s.transport.playing) levels.value = s.levels();
+      const head = s.transport.now();
+      // ~0.5 ms: below one pixel at any zoom the UI offers.
+      if (Math.abs(head - lastHead) > 0.0005) {
+        playhead.value = head;
+        lastHead = head;
+      }
+      if (playing.value !== s.transport.playing) playing.value = s.transport.playing;
+      const now = performance.now();
+      if (s.transport.playing && now - lastLevels > 1000 / LEVELS_HZ) {
+        levels.value = s.levels();
+        lastLevels = now;
+      }
     }
     raf = requestAnimationFrame(tick);
   };

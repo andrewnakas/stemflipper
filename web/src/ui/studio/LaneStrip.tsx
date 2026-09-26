@@ -34,6 +34,25 @@ export function LaneStrip(props: {
   const peaks = useRef<Float32Array | null>(null);
   const theme = themeVersion.value;
 
+  /**
+   * The strip's content is cached to an offscreen canvas and blitted, so an animation frame
+   * costs a copy and a one-pixel line rather than a full redraw.
+   *
+   * This matters for more than smoothness: the note scheduler is a timer on this same thread,
+   * and there are three of these strips per track. Redrawing all of them every frame — each
+   * one a per-pixel waveform loop — was enough to make the scheduler miss its window on a busy
+   * song, which comes out as late or bunched notes.
+   */
+  const layer = useRef<HTMLCanvasElement | null>(null);
+  const layerKey = useRef("");
+  const notesRef = useRef<Note[] | null>(null);
+  const notesVersion = useRef(0);
+  const peaksVersion = useRef(0);
+  if (notesRef.current !== props.notes) {
+    notesRef.current = props.notes;
+    notesVersion.current++;
+  }
+
   useEffect(() => {
     if (props.lane !== "original" || !props.track.audio.src || props.track.audio.silent) return;
     let cancelled = false;
@@ -44,6 +63,7 @@ export function LaneStrip(props: {
         if (cancelled) return;
         // One bucket per 20 ms: fine enough to read at any zoom this timeline allows.
         peaks.current = peaksFor(`${props.track.audio.src}|strip`, buf, Math.ceil(props.duration * 50));
+        peaksVersion.current++;
         draw();
       })
       .catch(() => undefined);
@@ -54,18 +74,22 @@ export function LaneStrip(props: {
 
   useEffect(draw);
 
-  function draw() {
-    const canvas = ref.current;
-    if (!canvas) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const w = canvas.clientWidth || 600;
-    const h = LANE_H;
-    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
-      canvas.width = Math.round(w * dpr);
-      canvas.height = Math.round(h * dpr);
-    }
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+  /** Everything except the playhead: redrawn only when one of its inputs changes. */
+  function drawContent(w: number, h: number, dpr: number): HTMLCanvasElement | null {
+    const key = [
+      props.track.id, props.lane, props.duration, props.pxPerSecond, Math.round(props.scrollX),
+      props.gain > 0.01 ? props.gain.toFixed(2) : "off", props.label, theme, dpr,
+      w, h, notesVersion.current, peaksVersion.current,
+    ].join("|");
+    if (layer.current && layerKey.current === key) return layer.current;
+
+    const off = layer.current ?? document.createElement("canvas");
+    layer.current = off;
+    layerKey.current = key;
+    off.width = Math.round(w * dpr);
+    off.height = Math.round(h * dpr);
+    const ctx = off.getContext("2d");
+    if (!ctx) return null;
     const c = rollPalette();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
@@ -119,17 +143,38 @@ export function LaneStrip(props: {
     ctx.fillStyle = props.gain > 0.01 ? c.label : c.grid;
     ctx.fillText(label, 4, h / 2);
 
-    const px = xOf(props.playhead);
-    if (px >= 0 && px <= w) {
-      ctx.fillStyle = c.playhead;
-      ctx.fillRect(px, 0, 1, h);
-    }
     ctx.strokeStyle = cssVar("--line-soft", "#8883");
     ctx.beginPath();
     ctx.moveTo(0, h - 0.5);
     ctx.lineTo(w, h - 0.5);
     ctx.stroke();
     void theme;
+    return off;
+  }
+
+  /** One frame: copy the cached content across and put the playhead on top. */
+  function draw() {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = canvas.clientWidth || 600;
+    const h = LANE_H;
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+    }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const content = drawContent(w, h, dpr);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (content) ctx.drawImage(content, 0, 0);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const px = props.playhead * props.pxPerSecond - props.scrollX;
+    if (px >= 0 && px <= w) {
+      ctx.fillStyle = rollPalette().playhead;
+      ctx.fillRect(px, 0, 1, h);
+    }
   }
 
   return (

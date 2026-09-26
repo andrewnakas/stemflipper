@@ -2,15 +2,35 @@
  *
  * Zones are chosen by pitch and velocity, round robins cycle, and loop points let a held
  * key sustain instead of stopping when the sample runs out.
+ *
+ * As with the synth lane, a note's whole shape is scheduled when the note is scheduled: a
+ * couple of milliseconds of attack (a multisample sliced out of a mix does not start at a zero
+ * crossing, and stepping straight to full level clicks), and the note-end fade for sustained
+ * zones. Voices stay in the map until they are actually silent, which is what lets a transport
+ * stop or a seek cut them.
  */
 
 import { decodeAudio } from "../../api/assets";
 import type { DrumKit, Instrument, Multisample, Note, SampleZone } from "../../model/types";
+import { CUT_S, cutParam, disconnectWhenDone, FLOOR } from "./envelope";
+
+/** Enough to be inaudible, enough to kill the step onto a non-zero first sample. */
+const ATTACK_S = 0.003;
+/** Note-end fade for a sustained (looped) zone. */
+const RELEASE_S = 0.03;
+/** Sample voices are cheap, but not free; dense kits can still pile up. */
+const MAX_VOICES = 48;
+
+interface SampleVoice {
+  src: AudioBufferSourceNode;
+  gain: GainNode;
+  endsAt: number;
+}
 
 export class SamplerLane {
   private buffers = new Map<string, AudioBuffer>();
   private rrCounters = new Map<string, number>();
-  private playing = new Map<string, { src: AudioBufferSourceNode; gain: GainNode }>();
+  private playing = new Map<string, SampleVoice>();
   private ready = false;
 
   constructor(
@@ -22,6 +42,10 @@ export class SamplerLane {
 
   get loaded(): boolean {
     return this.ready;
+  }
+
+  get voiceCount(): number {
+    return this.playing.size;
   }
 
   get zoneCount(): number {
@@ -92,10 +116,14 @@ export class SamplerLane {
   }
 
   noteOn(note: Note, when: number, until: number): void {
+    this.prune();
     const picked = this.pickZone(note);
     if (!picked) return;
     const buf = this.buffers.get(picked.zone.path);
     if (!buf) return;
+    this.enforceCeiling();
+    const existing = this.playing.get(note.id);
+    if (existing) this.cut(note.id, Math.max(this.ctx.currentTime, Math.min(when, existing.endsAt)));
 
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
@@ -104,40 +132,72 @@ export class SamplerLane {
       src.playbackRate.value = Math.pow(2, (note.pitch - picked.root) / 12);
     }
     const loop = picked.zone.loop;
-    if (loop && !isKit) {
+    const sustained = !!loop && !isKit;
+    if (sustained) {
       src.loop = true;
-      src.loopStart = loop.start / buf.sampleRate;
-      src.loopEnd = loop.end / buf.sampleRate;
+      src.loopStart = loop!.start / buf.sampleRate;
+      src.loopEnd = loop!.end / buf.sampleRate;
     }
 
     const gain = this.ctx.createGain();
     const level = Math.max(0.05, note.vel / 127) * Math.pow(10, (picked.zone.gain_db || 0) / 20);
-    gain.gain.value = level;
+    // A short attack rather than a step onto whatever the first sample happens to be.
+    gain.gain.setValueAtTime(FLOOR, when);
+    gain.gain.linearRampToValueAtTime(level, when + ATTACK_S);
     src.connect(gain).connect(this.dest);
     src.start(when);
-    // one-shots ring out; sustained zones are cut at note end by noteOff
-    if (isKit || !loop) src.stop(when + buf.duration / (src.playbackRate.value || 1) + 0.05);
-    else src.stop(until + 0.4);
 
-    this.playing.set(note.id, { src, gain });
+    let endsAt: number;
+    if (sustained) {
+      // Held zones are faded out at the note's end, scheduled here so a later call is not
+      // needed — which is what keeps this voice in the map and therefore cuttable.
+      const rel = Math.max(until, when + ATTACK_S + 0.005);
+      gain.gain.setValueAtTime(level, rel);
+      gain.gain.exponentialRampToValueAtTime(FLOOR, rel + RELEASE_S);
+      endsAt = rel + RELEASE_S + 0.02;
+      src.stop(endsAt);
+    } else {
+      // One-shots ring out for their natural length.
+      endsAt = when + buf.duration / (src.playbackRate.value || 1) + 0.05;
+      src.stop(endsAt);
+    }
+
+    disconnectWhenDone([src], [gain]);
+    this.playing.set(note.id, { src, gain, endsAt });
   }
 
-  noteOff(id: string, when: number): void {
+  /** Stop one note now — it was deleted or edited while playing. */
+  cut(id: string, at: number): void {
     const v = this.playing.get(id);
     if (!v) return;
     this.playing.delete(id);
-    if (this.instrument?.type === "drumkit") return; // let one-shots decay
+    const t = Math.max(at, this.ctx.currentTime);
+    cutParam(v.gain.gain, t);
     try {
-      v.gain.gain.cancelScheduledValues(when);
-      v.gain.gain.setValueAtTime(Math.max(0.0001, v.gain.gain.value), when);
-      v.gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.03);
-      v.src.stop(when + 0.06);
+      v.src.stop(t + CUT_S + 0.01);
     } catch {
       /* already stopped */
     }
   }
 
-  releaseAll(when: number): void {
-    for (const id of [...this.playing.keys()]) this.noteOff(id, when);
+  /** Stop everything now: transport stop, seek, or a loop wrap. */
+  cutAll(at: number): void {
+    for (const id of [...this.playing.keys()]) this.cut(id, at);
+  }
+
+  private prune(): void {
+    const now = this.ctx.currentTime;
+    for (const [id, v] of this.playing) {
+      if (v.endsAt <= now) this.playing.delete(id);
+    }
+  }
+
+  private enforceCeiling(): void {
+    if (this.playing.size < MAX_VOICES) return;
+    const now = this.ctx.currentTime;
+    for (const id of [...this.playing.keys()]) {
+      if (this.playing.size < MAX_VOICES) break;
+      this.cut(id, now);
+    }
   }
 }

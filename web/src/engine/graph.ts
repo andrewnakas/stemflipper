@@ -17,10 +17,14 @@ export interface TrackNodes {
   lanes: Record<"original" | "synth" | "sampler", GainNode>;
   input: GainNode;
   eq: BiquadFilterNode[];
+  /** Each EQ band's gain when FX are on; the bands sit at 0 dB when they are off. */
+  eqTargets: number[];
   pan: StereoPannerNode;
   volume: GainNode;
   mute: GainNode;
   send: GainNode;
+  /** The reverb send level when FX are on. */
+  sendTarget: number;
   analyser: AnalyserNode;
 }
 
@@ -41,6 +45,19 @@ export interface MixerState {
   fx: Record<string, boolean>;
   masterVolume: number;
 }
+
+/**
+ * Headroom on the sampler lane, so the reconstruction sits at the same level as the source.
+ *
+ * Measured on the demo fixture by rendering each lane on its own: original peaked at 0.610 and
+ * the sampler at **1.046** — clipping, and about 4.7 dB hotter than the stem it is meant to
+ * blend against. A sampler voice plays at `velocity/127` of a sample that was already cut at
+ * mix level, so four tracks of one-shots stack past full scale and ride the master limiter,
+ * which on drum transients reads as distortion. Trimming here matches the two lanes, which is
+ * what makes crossfading between them mean anything. The synth lane needs none (it peaked at
+ * 0.631 against the same 0.610).
+ */
+const SAMPLER_TRIM = 0.58;
 
 export function defaultMixerState(project: Project): MixerState {
   const state: MixerState = {
@@ -116,11 +133,20 @@ function buildTrack(
   };
   const laneState = state.lanes[track.id] || { original: 1, synth: 0, sampler: 0 };
   for (const key of ["original", "synth", "sampler"] as const) {
-    lanes[key].gain.value = laneState[key];
+    lanes[key].gain.value = laneState[key] * laneTrim(key);
     lanes[key].connect(input);
   }
 
-  const eq = state.fx[track.id] ? buildEqChain(ctx, track.effects?.eq?.bands) : [];
+  // The EQ is built whether or not FX are on, with its bands flat until they are: the chain
+  // cannot be inserted later without rebuilding the graph, and rebuilding the graph mid-song
+  // is exactly what this design exists to avoid. `applyMixer` ramps the band gains, so the
+  // button is live. A handful of biquads per track is cheap.
+  const eq = buildEqChain(ctx, track.effects?.eq?.bands);
+  const eqOn = !!state.fx[track.id];
+  // Read the targets off the nodes rather than re-deriving them from the bands: buildEqChain
+  // drops inaudible bands, and a second copy of that rule would misalign the indices.
+  const eqTargets = eq.map((b) => b.gain.value);
+  for (const band of eq) if (!eqOn) band.gain.value = 0;
   chain(eq, input, pan);
   pan.pan.value = state.pan[track.id] ?? 0;
   pan.connect(volume);
@@ -131,13 +157,21 @@ function buildTrack(
   analyser.connect(master);
 
   const send = ctx.createGain();
-  send.gain.value = state.fx[track.id] ? (track.effects?.reverb?.mix ?? 0) : 0;
+  const sendTarget = track.effects?.reverb?.mix ?? 0;
+  send.gain.value = eqOn ? sendTarget : 0;
   if (convolver) {
     mute.connect(send);
     send.connect(convolver);
   }
 
-  return { id: track.id, lanes, input, eq, pan, volume, mute, send, analyser };
+  return {
+    id: track.id, lanes, input, eq, eqTargets, pan, volume, mute, send, sendTarget, analyser,
+  };
+}
+
+/** Fixed per-lane trim, so a fader at 1 means the same loudness on every lane. */
+function laneTrim(lane: "original" | "synth" | "sampler"): number {
+  return lane === "sampler" ? SAMPLER_TRIM : 1;
 }
 
 /** Solo wins over mute; with nothing soloed, mute decides. */
@@ -156,9 +190,17 @@ export function applyMixer(graph: MixGraph, state: MixerState, when: number): vo
     const laneState = state.lanes[id];
     if (laneState) {
       for (const key of ["original", "synth", "sampler"] as const) {
-        nodes.lanes[key].gain.setTargetAtTime(laneState[key], when, 0.01);
+        nodes.lanes[key].gain.setTargetAtTime(laneState[key] * laneTrim(key), when, 0.01);
       }
     }
+    // FX: ramp the EQ bands and the reverb send rather than leaving the button inert until
+    // something happens to rebuild the graph.
+    const on = !!state.fx[id];
+    const targets = nodes.eqTargets;
+    nodes.eq.forEach((band, i) => {
+      band.gain.setTargetAtTime(on ? (targets[i] ?? 0) : 0, when, 0.02);
+    });
+    nodes.send.gain.setTargetAtTime(on ? nodes.sendTarget : 0, when, 0.02);
   }
 }
 
