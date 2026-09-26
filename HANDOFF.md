@@ -113,6 +113,21 @@ the limiter alone, **0.897 with the ceiling** — and rms went *up* (0.2386 → 
 gentler knee limits less overall, while the sharpest transient in the file got smaller. Every
 fader configuration now lands under 0.93, including all three lanes at 100%, which was 1.009.
 
+**audiosaw lags Pages by about ten minutes after a deploy — that is not a broken deploy.**
+Worth knowing before diagnosing one. Immediately after `pages` goes green,
+`andrewnakas.github.io/stemflipper/` serves the new bundle hash while
+`audiosaw.com/stemflipper/` still serves the old one, and the old hashed asset is already **404
+at origin** because a Pages deploy replaces everything. It looks like a half-broken site and is
+not: the Function sets `max-age=600` on the HTML and `max-age=14400` on hashed assets, so the
+HTML refreshes twenty-four times faster than the asset it names. New HTML therefore always
+arrives before its JS expires, and it asks for a bundle that does exist. Verify a deploy by
+watching the bundle hash at `audiosaw.com`, and give it ten minutes before worrying.
+
+**`concurrency: cancel-in-progress: true` means a quick second push throws away the first
+deploy.** Four pushes in a row here produced one deploy: a green build's `deploy` job was
+cancelled by the next push, so the fix sat on `main`, CI-green, and unshipped. Batch fixes, or
+wait for the deploy — not just the build — before pushing again.
+
 **Two testing lessons from pushing this, both of which cost a red build.**
 1. **`vite preview` answers an unknown path with index.html and a 200**, so a missing asset is
    invisible locally and only 404s once deployed. That hid a stale request for the CI fixture's
