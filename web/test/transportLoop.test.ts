@@ -64,9 +64,16 @@ beforeEach(() => {
     },
     clearInterval: () => undefined,
   });
-  vi.stubGlobal("performance", { now: () => 0 });
+  // Spy on the METHOD, never stubGlobal the whole `performance` object: vitest uses
+  // performance.mark/measure for its own timing, and replacing the object with a bare
+  // { now } left the runner without them — locally the suite still passed, in CI it hung
+  // for nine minutes and the job had to be killed.
+  vi.spyOn(performance, "now").mockReturnValue(0);
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 /** Advance the context clock and run the scheduler, the way the real timer would. */
 function advance(ctx: FakeContext, _t: Transport, to: number, stepS = 0.025) {
@@ -169,7 +176,7 @@ describe("late ticks", () => {
     const r = runtime(notesEvery(60, 0.05));
     t.duration = 10;
     let wall = 0;
-    vi.stubGlobal("performance", { now: () => wall * 1000 });
+    vi.spyOn(performance, "now").mockImplementation(() => wall * 1000);
     t.setTracks([r]);
     t.play(0);
 
